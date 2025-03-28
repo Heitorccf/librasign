@@ -1,0 +1,19 @@
+# Versão recomendada do Python
+# python==3.9.13
+
+# Biblioteca principal de redes neurais
+tensorflow==2.19.0
+
+# Utilitários para redes neurais e dados
+scikit-learn==1.6.1
+numpy==1.26.4
+
+# Visão computacional e detecção de mãos
+opencv-python==4.11.0.86
+mediapipe==0.10.21
+
+# Visualização (opcional, útil para notebooks ou debug)
+matplotlib==3.9.4
+
+# Salvar imagens e manipulação básica
+pillow==11.1.0

@@ -1,0 +1,24 @@
+# Cache do Python
+__pycache__/
+*.pyc
+
+# Virtualenv
+venv/
+.env/
+
+# Lixo do sistema
+.DS_Store
+Thumbs.db
+
+# Dados brutos
+data/raw/
+
+# Modelos ML
+models/
+
+# Logs e cache
+*.log
+.cache/
+
+# Config do VSCode
+.vscode/
