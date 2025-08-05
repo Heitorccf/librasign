@@ -1,24 +1,47 @@
-# Cache do Python
+# Ambientes virtuais
+.venv/
+venv/
+ENV/
+env/
+
+# Python bytecode/compilados
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Virtualenv
-venv/
-.env/
+# Distribuição/pacotes Python
+build/
+dist/
+*.egg-info/
+*.egg
 
-# Lixo do sistema
+# Logs do pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Configurações de IDEs (exemplos)
+# .vscode/*
+# !.vscode/settings.json
+# !.vscode/tasks.json
+# !.vscode/launch.json
+# !.vscode/extensions.json
+# .idea/
+
+# Arquivos de SO
 .DS_Store
 Thumbs.db
 
-# Dados brutos
+# Logs da aplicação
+*.log
+logs/
+
+# Dados capturados (ignorar conteúdo de data/raw/)
 data/raw/
 
-# Modelos ML
+# Modelos treinados (ignorar conteúdo de models/)
 models/
 
-# Logs e cache
-*.log
-.cache/
-
-# Config do VSCode
-.vscode/
+# Arquivos temporários/swap de editores
+*.swp
+*.swo

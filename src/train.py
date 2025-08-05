@@ -6,7 +6,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
-from src.normalizing import load_and_preprocess_images
+from normalizing import load_and_preprocess_images
 
 # Carrega as imagens e rótulos
 print("[INFO] Carregando e processando imagens...")
