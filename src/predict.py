@@ -1,3 +1,14 @@
+# -*- coding: utf-8 -*-
+"""
+Script para Predição em Tempo Real com o Modelo Treinado.
+
+Este módulo implementa a aplicação final. Ele carrega o modelo de CNN
+previamente treinado, captura o vídeo da webcam, detecta a mão do usuário,
+processa a imagem da mão em tempo real e utiliza o modelo para prever
+a qual letra do alfabeto de Libras o gesto corresponde, exibindo o
+resultado em uma sobreposição na tela.
+"""
+
 import cv2
 import numpy as np
 import mediapipe as mp
@@ -5,71 +16,72 @@ from tensorflow.keras.models import load_model
 from sklearn.preprocessing import LabelBinarizer
 import os
 
-print("[DEBUG] Script iniciado.")
+print("[DEBUG] Script de predição iniciado.")
 
+# Desabilita otimizações do oneDNN que podem causar inconsistências numéricas.
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
-# --- Configurações e Carregamento Inicial ---
-MODEL_PATH = "models/best_model.keras"
-IMG_SIZE = 224
+# --- Etapa 1: Carregamento de Recursos ---
 
-print("[INFO] Carregando modelo treinado...")
+MODEL_PATH = "models/best_model.keras"  # Caminho para o modelo treinado.
+IMG_SIZE = 224                          # Tamanho das imagens de entrada do modelo.
+
+print(f"[INFO] Carregando modelo de: {MODEL_PATH}")
+# Carrega a arquitetura e os pesos do modelo treinado a partir do arquivo .keras.
 model = load_model(MODEL_PATH)
 print("[DEBUG] Modelo carregado com sucesso.")
 
-# Recupera as classes (rótulos) a partir dos nomes dos diretórios em data/raw
+# Para decodificar as predições do modelo (que são em formato one-hot),
+# é necessário recriar o mapeamento entre índices e rótulos (letras).
 labels_path = "data/raw"
-print(f"[DEBUG] Verificando o caminho dos dados: '{labels_path}'")
 if not os.path.exists(labels_path) or not os.listdir(labels_path):
-    print(f"[ERRO CRÍTICO] O diretório de dados '{labels_path}' não foi encontrado ou está vazio. Por favor, execute o script 'capture.py' primeiro.")
+    print(f"[ERRO CRÍTICO] Diretório de dados '{labels_path}' não encontrado ou vazio. "
+          "Execute os scripts 'capture.py' e 'train.py' primeiro.")
     exit()
-print("[DEBUG] Diretório de dados verificado com sucesso.")
 
+# O LabelBinarizer é reajustado com os nomes dos diretórios (que são as classes)
+# para garantir que a correspondência de rótulos seja a mesma do treinamento.
 labels = sorted(os.listdir(labels_path))
 encoder = LabelBinarizer()
 encoder.fit(labels)
-print("[DEBUG] Rótulos (labels) processados.")
+print("[DEBUG] Rótulos (labels) processados e prontos para decodificação.")
 
-# Inicializa MediaPipe Hands para detecção
+# Inicializa o MediaPipe Hands com parâmetros de alta confiança para evitar
+# falsos positivos durante a predição em tempo real.
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.7, min_tracking_confidence=0.7)
+hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1,
+                       min_detection_confidence=0.7, min_tracking_confidence=0.7)
 mp_draw = mp.solutions.drawing_utils
-print("[DEBUG] MediaPipe inicializado.")
 
-# Inicia a webcam
-print("[DEBUG] Tentando iniciar a webcam (cv2.VideoCapture)...")
+# --- Etapa 2: Loop Principal de Predição ---
+
 cap = cv2.VideoCapture(0)
-
-# Verificação crucial se a câmera abriu
 if not cap.isOpened():
-    print("[ERRO CRÍTICO] FALHA AO ABRIR A WEBCAM. Verifique se a câmera não está em uso por outro programa (Zoom, Teams, etc.) ou se o dispositivo está conectado corretamente.")
+    print("[ERRO CRÍTICO] Falha ao acessar a webcam. "
+          "Verifique se ela não está em uso por outro aplicativo.")
     exit()
-print("[DEBUG] Webcam iniciada com sucesso.")
 
-print("[INFO] Pressione ESC para sair.")
-print("[DEBUG] Entrando no loop principal...")
+print("[INFO] Sistema pronto. Pressione 'ESC' para sair.")
 
-# --- Loop Principal de Captura e Predição ---
 while True:
     ret, frame = cap.read()
     if not ret:
-        print("[AVISO] Não foi possível capturar o frame da webcam neste ciclo.")
-        continue # Usa 'continue' em vez de 'break' para tentar o próximo frame
+        print("[AVISO] Falha ao capturar frame da webcam.")
+        continue
 
     frame = cv2.flip(frame, 1)
     img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
     result = hands.process(img_rgb)
-    prediction_label = ""
+    prediction_label = ""  # Inicializa a variável de predição.
 
     if result.multi_hand_landmarks:
         for hand_landmarks in result.multi_hand_landmarks:
             mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-            
+
+            # O recorte da mão segue a mesma lógica do script de captura.
             h, w, _ = frame.shape
             x_coords = [lm.x * w for lm in hand_landmarks.landmark]
             y_coords = [lm.y * h for lm in hand_landmarks.landmark]
-            
             margin = 20
             x_min, x_max = int(min(x_coords)) - margin, int(max(x_coords)) + margin
             y_min, y_max = int(min(y_coords)) - margin, int(max(y_coords)) + margin
@@ -77,58 +89,59 @@ while True:
             x_max, y_max = min(x_max, w), min(y_max, h)
 
             hand_img_roi = frame[y_min:y_max, x_min:x_max]
-            
-            if hand_img_roi.size > 0:
-                hand_img_processed = cv2.resize(hand_img_roi, (IMG_SIZE, IMG_SIZE))
-                hand_img_processed_rgb = cv2.cvtColor(hand_img_processed, cv2.COLOR_BGR2RGB)
-                hand_img_normalized = hand_img_processed_rgb.astype(np.float32) / 255.0
-                hand_img_expanded = np.expand_dims(hand_img_normalized, axis=0)
 
-                prediction = model.predict(hand_img_expanded)
+            if hand_img_roi.size > 0:
+                # O pré-processamento da ROI deve espelhar exatamente as etapas
+                # realizadas no script `normalizing.py` antes do treinamento.
+                gray_hand = cv2.cvtColor(hand_img_roi, cv2.COLOR_BGR2GRAY)
+                hand_img_resized = cv2.resize(gray_hand, (IMG_SIZE, IMG_SIZE))
+                hand_img_normalized = hand_img_resized.astype(np.float32) / 255.0
+
+                # A imagem precisa ser expandida para o formato 4D esperado pelo modelo.
+                # A dimensão do batch (lote) é 1, pois estamos prevendo uma única imagem.
+                # Formato final: (1, 224, 224, 1).
+                hand_img_expanded = np.expand_dims(hand_img_normalized, axis=0)
+                hand_img_expanded = np.expand_dims(hand_img_expanded, axis=-1)
+
+                # Realiza a inferência. O modelo retorna um array de probabilidades.
+                prediction = model.predict(hand_img_expanded, verbose=0)
+                # `np.argmax` encontra o índice do neurônio com a maior probabilidade.
                 predicted_index = np.argmax(prediction)
+                # Usa o `encoder` para converter o índice de volta para o rótulo textual.
                 prediction_label = encoder.classes_[predicted_index]
 
-    # --- Seção de Exibição da Interface (UI) ---
-    display_text = ""
-    text_color = (255, 255, 255)
-    bg_color_default = (128, 0, 0)
-    bg_color_prediction = (0, 128, 0)
+    # --- Etapa 3: Visualização da Interface Gráfica (UI) ---
 
-    font_scale = 1.0
-    font_thickness = 2
-    font_face = cv2.FONT_HERSHEY_TRIPLEX 
-    padding = 10
+    # Esta seção é dedicada a criar um display informativo e esteticamente
+    # agradável para o usuário, mostrando a predição em tempo real.
+    display_text = f"Letra: {prediction_label}" if prediction_label else "Aguardando gesto..."
+    bg_color = (0, 128, 0) if prediction_label else (128, 0, 0) # Verde para predição, Vermelho para espera
 
-    if prediction_label:
-        display_text = f"Letra: {prediction_label}"
-        current_bg_color = bg_color_prediction
-    else:
-        display_text = "Aguardando gesto..."
-        current_bg_color = bg_color_default
-
-    (text_width, text_height), baseline = cv2.getTextSize(display_text, font_face, font_scale, font_thickness)
+    # Calcula o tamanho do texto para desenhar uma caixa de fundo.
+    (text_width, text_height), _ = cv2.getTextSize(display_text, cv2.FONT_HERSHEY_TRIPLEX, 1.0, 2)
     
-    text_x = frame.shape[1] - text_width - padding * 2 
-    text_y = padding + text_height
+    # Define as coordenadas para o retângulo e o texto.
+    rect_start = (frame.shape[1] - text_width - 30, 10)
+    rect_end = (frame.shape[1] - 10, 20 + text_height)
+    text_pos = (frame.shape[1] - text_width - 20, 10 + text_height)
 
-    rect_start_point = (text_x - padding, text_y - text_height - padding + baseline)
-    rect_end_point = (text_x + text_width + padding, text_y + padding)
-
+    # Desenha um retângulo com transparência para destacar o texto.
     overlay = frame.copy()
-    cv2.rectangle(overlay, rect_start_point, rect_end_point, current_bg_color, cv2.FILLED)
-    alpha = 0.6
+    cv2.rectangle(overlay, rect_start, rect_end, bg_color, cv2.FILLED)
+    alpha = 0.6  # Nível de transparência.
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
-    cv2.putText(frame, display_text, (text_x, text_y), font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+    # Escreve o texto da predição sobre o retângulo.
+    cv2.putText(frame, display_text, text_pos, cv2.FONT_HERSHEY_TRIPLEX, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
 
     cv2.imshow("Reconhecimento de Gestos - LIBRAS", frame)
 
     key = cv2.waitKey(1) & 0xFF
-    if key == 27:
+    if key == 27:  # ESC para sair.
         break
 
 # --- Finalização ---
-print("[DEBUG] Saindo do loop principal.")
+print("[DEBUG] Saindo do loop principal e liberando recursos.")
 cap.release()
 cv2.destroyAllWindows()
-print("[DEBUG] Recursos liberados. Fim do script.")
+print("[DEBUG] Fim do script.")
