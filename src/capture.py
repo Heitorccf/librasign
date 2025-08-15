@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-Script para Captura de Dados Visuais para Treinamento de Modelo.
+Sistema de Aquisição de Dados Visuais para Treinamento de Modelo de Reconhecimento.
 
-Este módulo é responsável pela aquisição de imagens da Língua Brasileira
-de Sinais (Libras) através de uma webcam. Ele utiliza a biblioteca OpenCV
-para a interface com a câmera e o MediaPipe para a detecção de mãos em
-tempo real, recortando e salvando a região de interesse para posterior
-processamento e treinamento da rede neural.
+Este módulo implementa a captura sistemática de imagens da Língua Brasileira de 
+Sinais (Libras) utilizando dispositivo de câmera. O sistema emprega a biblioteca 
+OpenCV para gerenciamento da interface de vídeo e o framework MediaPipe para 
+detecção e rastreamento de mãos em tempo real, realizando o recorte automático 
+da região de interesse e armazenamento estruturado dos dados coletados.
 """
 
 import cv2
@@ -14,136 +14,136 @@ import mediapipe as mp
 import os
 from datetime import datetime
 
-# --- Inicialização de Componentes Essenciais ---
+# Configurando os componentes fundamentais do sistema
 
-# Inicializa a solução 'Hands' da biblioteca MediaPipe para a detecção de
-# marcos de referência (landmarks) da mão.
-# O parâmetro 'max_num_hands=1' restringe a detecção a uma única mão,
-# otimizando o desempenho e focando no escopo do projeto.
+# Inicializando o módulo de detecção de mãos do MediaPipe com parâmetros
+# otimizados para o contexto de captura individual. A restrição para detecção
+# de uma única mão maximiza a eficiência computacional e mantém o foco no
+# objetivo específico do projeto.
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1)
 
-# Inicializa as utilidades de desenho do MediaPipe para visualizar
-# os landmarks e as conexões da mão sobre a imagem.
+# Carregando as ferramentas de renderização visual do MediaPipe para 
+# representação gráfica dos pontos de referência anatômicos detectados.
 mp_draw = mp.solutions.drawing_utils
 
-# --- Configuração de Parâmetros ---
+# Definindo parâmetros operacionais do sistema
 
-# Define o diretório raiz para o armazenamento dos dados brutos.
-# As imagens capturadas serão organizadas em subdiretórios nomeados
-# de acordo com a sua classe (letra do alfabeto).
+# Estabelecendo o diretório base para armazenamento hierárquico dos dados.
+# A estrutura de pastas seguirá o padrão de categorização por classe alfabética.
 DATA_DIR = "data/raw"
 
-# Define a resolução padrão (altura e largura) para as imagens salvas.
-# A uniformidade de tamanho é um pré-requisito para o treinamento de
-# Redes Neurais Convolucionais (CNNs).
+# Especificando as dimensões padronizadas para as imagens processadas.
+# A padronização dimensional é requisito fundamental para o treinamento
+# eficaz de arquiteturas convolucionais.
 IMG_SIZE = 224
 
-# --- Loop Principal de Captura ---
+# Executando o ciclo principal de aquisição de dados
 
-# Instancia um objeto VideoCapture para acessar o stream da webcam primária (índice 0).
+# Estabelecendo conexão com o dispositivo de captura de vídeo padrão do sistema.
 cap = cv2.VideoCapture(0)
 
 print("[INFO] Pressione uma tecla (A-Z) para iniciar a captura de imagens para essa letra.")
 print("[INFO] Pressione a tecla 'ESC' para finalizar a execução.")
 
-current_label = None  # Variável para armazenar o rótulo (letra) da captura atual.
-img_count = 0         # Contador para o número de imagens capturadas por rótulo.
+current_label = None  # Armazenando o identificador da classe em captura.
+img_count = 0         # Contabilizando as amostras coletadas por classe.
 
 while True:
-    # Realiza a leitura de um frame do vídeo. 'ret' é um booleano que indica
-    # sucesso na captura, e 'frame' é a matriz da imagem.
+    # Capturando o quadro atual do fluxo de vídeo. O valor booleano 'ret'
+    # indica o sucesso da operação, enquanto 'frame' contém os dados da imagem.
     ret, frame = cap.read()
     if not ret:
         print("[AVISO] Não foi possível capturar o frame. Encerrando.")
         break
 
-    # Inverte o frame horizontalmente (espelhamento).
-    # Esta operação proporciona uma experiência de usuário mais intuitiva.
+    # Aplicando transformação de espelhamento horizontal para proporcionar
+    # uma experiência mais natural ao usuário durante a interação.
     frame = cv2.flip(frame, 1)
 
-    # Converte o frame do espaço de cores BGR (padrão do OpenCV) para RGB.
-    # O MediaPipe espera imagens no formato RGB para o processamento.
+    # Convertendo o espaço de cores de BGR (convenção OpenCV) para RGB,
+    # adequando o formato aos requisitos de entrada do MediaPipe.
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-    # Processa o frame RGB para detectar a presença de mãos.
+    # Processando o quadro para identificação de estruturas anatômicas da mão.
     result = hands.process(frame_rgb)
 
-    # Verifica se foram detectados landmarks de mão no frame.
+    # Verificando a presença de detecções válidas no quadro processado.
     if result.multi_hand_landmarks:
-        # Itera sobre cada mão detectada (neste caso, no máximo uma).
+        # Iterando sobre as detecções identificadas (limitadas a uma neste contexto).
         for hand_landmarks in result.multi_hand_landmarks:
-            # Renderiza os landmarks e as conexões sobre o frame original (colorido).
+            # Desenhando a representação visual dos pontos e conexões anatômicas.
             mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-            # Obtém as dimensões do frame para converter as coordenadas
-            # normalizadas (0 a 1) dos landmarks em coordenadas de pixel.
+            # Extraindo as dimensões do quadro para conversão de coordenadas
+            # normalizadas (intervalo [0,1]) para coordenadas absolutas em pixels.
             h, w, _ = frame.shape
             x_coords = [lm.x * w for lm in hand_landmarks.landmark]
             y_coords = [lm.y * h for lm in hand_landmarks.landmark]
 
-            # Calcula a Bounding Box (caixa delimitadora) que envolve a mão.
-            # Uma margem de 20 pixels é adicionada para garantir que a mão inteira
-            # seja capturada, mesmo em movimentos rápidos.
+            # Calculando os limites da região delimitadora com margem de segurança
+            # de 20 pixels, garantindo a captura completa da gesticulação mesmo
+            # durante movimentos dinâmicos.
             x_min, x_max = int(min(x_coords)) - 20, int(max(x_coords)) + 20
             y_min, y_max = int(min(y_coords)) - 20, int(max(y_coords)) + 20
 
-            # Garante que as coordenadas da Bounding Box não excedam os limites do frame.
+            # Aplicando restrições aos limites para prevenir extrapolação das
+            # dimensões válidas da imagem.
             x_min, y_min = max(x_min, 0), max(y_min, 0)
             x_max, y_max = min(x_max, w), min(y_max, h)
 
-            # Recorta a Região de Interesse (ROI - Region of Interest) do frame original.
+            # Extraindo a região de interesse contendo a mão detectada.
             hand_img = frame[y_min:y_max, x_min:x_max]
 
-            # Assegura que a ROI não está vazia antes de prosseguir.
+            # Validando a integridade da região extraída antes do processamento.
             if hand_img.size == 0:
                 continue
 
-            # Converte a ROI recortada para escala de cinza. Esta é uma etapa crucial
-            # de otimização, pois remove informações de cor irrelevantes (tons de pele,
-            # iluminação) e foca o aprendizado do modelo na forma do gesto.
+            # Convertendo para escala de cinza, eliminando variações cromáticas
+            # irrelevantes e focalizando o aprendizado nas características
+            # morfológicas do gesto.
             gray_hand_img = cv2.cvtColor(hand_img, cv2.COLOR_BGR2GRAY)
 
-            # Redimensiona a imagem em escala de cinza para o tamanho padrão (IMG_SIZE).
+            # Redimensionando a imagem para as dimensões padronizadas do conjunto de dados.
             gray_hand_img_resized = cv2.resize(gray_hand_img, (IMG_SIZE, IMG_SIZE))
 
-            # Se uma letra foi selecionada pelo usuário, procede com o salvamento.
+            # Persistindo a amostra coletada quando uma classe está selecionada.
             if current_label:
-                # Define o caminho completo do diretório para a letra atual.
+                # Construindo o caminho completo do diretório de destino.
                 save_dir = os.path.join(DATA_DIR, current_label.upper())
-                # Cria o diretório se ele não existir.
+                # Criando a estrutura de diretórios necessária.
                 os.makedirs(save_dir, exist_ok=True)
 
-                # Gera um nome de arquivo único utilizando um timestamp preciso.
+                # Gerando identificador único temporal com precisão de microssegundos.
                 timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
                 filename = f"{current_label.upper()}_{timestamp}.jpg"
 
-                # Salva a imagem processada (em escala de cinza e redimensionada) no disco.
+                # Salvando a imagem processada no sistema de arquivos.
                 cv2.imwrite(os.path.join(save_dir, filename), gray_hand_img_resized)
                 img_count += 1
 
-                # Exibe um feedback visual na tela indicando o processo de captura.
+                # Exibindo indicador visual do progresso da captura.
                 cv2.putText(frame, f"Salvando {current_label.upper()} - {img_count}",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-    # Exibe a janela com o vídeo da webcam e as sobreposições.
+    # Renderizando a interface visual com as anotações aplicadas.
     cv2.imshow("Captura de Gestos - LIBRAS", frame)
 
-    # Aguarda por uma tecla pressionada (1 milissegundo de espera).
+    # Capturando entrada do teclado com timeout de 1 milissegundo.
     key = cv2.waitKey(1) & 0xFF
 
-    # Condição de parada: se a tecla 'ESC' (código ASCII 27) for pressionada.
+    # Verificando condição de término através da tecla ESC (código ASCII 27).
     if key == 27:
         break
-    # Condição de captura: se uma tecla de 'A' a 'Z' for pressionada.
+    # Detectando seleção de nova classe através de teclas alfabéticas.
     elif 65 <= key <= 90 or 97 <= key <= 122:
         current_label = chr(key).upper()
-        img_count = 0  # Reinicia o contador para a nova letra.
+        img_count = 0  # Reinicializando o contador para a nova classe.
         print(f"[INFO] Capturando imagens para a letra: {current_label}")
 
-# --- Finalização ---
+# Liberando recursos do sistema
 
-# Libera o dispositivo da webcam.
+# Desconectando o dispositivo de captura de vídeo.
 cap.release()
-# Fecha todas as janelas criadas pelo OpenCV.
+# Fechando todas as interfaces gráficas instanciadas.
 cv2.destroyAllWindows()

@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Script para Predição em Tempo Real com o Modelo Treinado.
+Sistema de Reconhecimento e Predição de Gestos em Tempo Real.
 
-Este módulo implementa a aplicação final. Ele carrega o modelo de CNN
-previamente treinado, captura o vídeo da webcam, detecta a mão do usuário,
-processa a imagem da mão em tempo real e utiliza o modelo para prever
-a qual letra do alfabeto de Libras o gesto corresponde, exibindo o
-resultado em uma sobreposição na tela.
+Este módulo constitui a aplicação final do sistema de reconhecimento de Libras,
+integrando o modelo de rede neural convolucional previamente treinado com um
+pipeline de captura e processamento de vídeo. O sistema realiza a detecção
+contínua de gestos manuais através da webcam, processando cada quadro em
+tempo real e classificando o gesto capturado em sua respectiva letra do
+alfabeto, apresentando os resultados através de uma interface visual interativa.
 """
 
 import cv2
@@ -18,42 +19,43 @@ import os
 
 print("[DEBUG] Script de predição iniciado.")
 
-# Desabilita otimizações do oneDNN que podem causar inconsistências numéricas.
+# Desabilitando otimizações do oneDNN para garantir consistência e
+# reprodutibilidade nos cálculos numéricos durante a inferência.
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
-# --- Etapa 1: Carregamento de Recursos ---
+# Inicializando recursos e configurações do sistema
 
-MODEL_PATH = "models/best_model.keras"  # Caminho para o modelo treinado.
-IMG_SIZE = 224                          # Tamanho das imagens de entrada do modelo.
+MODEL_PATH = "models/best_model.keras"  # Especificando o caminho do modelo pré-treinado.
+IMG_SIZE = 224                          # Definindo dimensões padronizadas para entrada do modelo.
 
 print(f"[INFO] Carregando modelo de: {MODEL_PATH}")
-# Carrega a arquitetura e os pesos do modelo treinado a partir do arquivo .keras.
+# Restaurando a arquitetura completa e os parâmetros aprendidos do modelo neural.
 model = load_model(MODEL_PATH)
 print("[DEBUG] Modelo carregado com sucesso.")
 
-# Para decodificar as predições do modelo (que são em formato one-hot),
-# é necessário recriar o mapeamento entre índices e rótulos (letras).
+# Reconstruindo o mapeamento categórico para decodificação das predições,
+# garantindo correspondência exata com o esquema utilizado durante o treinamento.
 labels_path = "data/raw"
 if not os.path.exists(labels_path) or not os.listdir(labels_path):
     print(f"[ERRO CRÍTICO] Diretório de dados '{labels_path}' não encontrado ou vazio. "
           "Execute os scripts 'capture.py' e 'train.py' primeiro.")
     exit()
 
-# O LabelBinarizer é reajustado com os nomes dos diretórios (que são as classes)
-# para garantir que a correspondência de rótulos seja a mesma do treinamento.
+# Sincronizando o codificador com a estrutura de classes original,
+# preservando a ordenação alfabética para consistência na decodificação.
 labels = sorted(os.listdir(labels_path))
 encoder = LabelBinarizer()
 encoder.fit(labels)
 print("[DEBUG] Rótulos (labels) processados e prontos para decodificação.")
 
-# Inicializa o MediaPipe Hands com parâmetros de alta confiança para evitar
-# falsos positivos durante a predição em tempo real.
+# Configurando o detector de mãos com parâmetros otimizados para
+# minimizar detecções espúrias e maximizar a estabilidade do rastreamento.
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1,
                        min_detection_confidence=0.7, min_tracking_confidence=0.7)
 mp_draw = mp.solutions.drawing_utils
 
-# --- Etapa 2: Loop Principal de Predição ---
+# Executando o ciclo principal de captura e predição
 
 cap = cv2.VideoCapture(0)
 if not cap.isOpened():
@@ -72,13 +74,14 @@ while True:
     frame = cv2.flip(frame, 1)
     img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     result = hands.process(img_rgb)
-    prediction_label = ""  # Inicializa a variável de predição.
+    prediction_label = ""  # Inicializando variável para armazenar a predição atual.
 
     if result.multi_hand_landmarks:
         for hand_landmarks in result.multi_hand_landmarks:
             mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-            # O recorte da mão segue a mesma lógica do script de captura.
+            # Calculando os limites espaciais da região contendo a mão detectada,
+            # mantendo consistência com o protocolo de captura original.
             h, w, _ = frame.shape
             x_coords = [lm.x * w for lm in hand_landmarks.landmark]
             y_coords = [lm.y * h for lm in hand_landmarks.landmark]
@@ -91,56 +94,56 @@ while True:
             hand_img_roi = frame[y_min:y_max, x_min:x_max]
 
             if hand_img_roi.size > 0:
-                # O pré-processamento da ROI deve espelhar exatamente as etapas
-                # realizadas no script `normalizing.py` antes do treinamento.
+                # Aplicando pipeline de pré-processamento idêntico ao utilizado
+                # durante a fase de treinamento, garantindo consistência na inferência.
                 gray_hand = cv2.cvtColor(hand_img_roi, cv2.COLOR_BGR2GRAY)
                 hand_img_resized = cv2.resize(gray_hand, (IMG_SIZE, IMG_SIZE))
                 hand_img_normalized = hand_img_resized.astype(np.float32) / 255.0
 
-                # A imagem precisa ser expandida para o formato 4D esperado pelo modelo.
-                # A dimensão do batch (lote) é 1, pois estamos prevendo uma única imagem.
-                # Formato final: (1, 224, 224, 1).
+                # Reestruturando o tensor para conformidade com a arquitetura do modelo.
+                # Adicionando dimensão de lote unitário e canal monocromático,
+                # resultando no formato esperado: (1, 224, 224, 1).
                 hand_img_expanded = np.expand_dims(hand_img_normalized, axis=0)
                 hand_img_expanded = np.expand_dims(hand_img_expanded, axis=-1)
 
-                # Realiza a inferência. O modelo retorna um array de probabilidades.
+                # Executando inferência através da propagação direta na rede neural.
                 prediction = model.predict(hand_img_expanded, verbose=0)
-                # `np.argmax` encontra o índice do neurônio com a maior probabilidade.
+                # Identificando a classe de maior probabilidade através do argumento máximo.
                 predicted_index = np.argmax(prediction)
-                # Usa o `encoder` para converter o índice de volta para o rótulo textual.
+                # Decodificando o índice numérico para sua representação alfabética.
                 prediction_label = encoder.classes_[predicted_index]
 
-    # --- Etapa 3: Visualização da Interface Gráfica (UI) ---
+    # Renderizando interface visual com feedback em tempo real
 
-    # Esta seção é dedicada a criar um display informativo e esteticamente
-    # agradável para o usuário, mostrando a predição em tempo real.
+    # Construindo elementos visuais informativos para comunicação efetiva
+    # do estado atual do sistema e resultados da classificação.
     display_text = f"Letra: {prediction_label}" if prediction_label else "Aguardando gesto..."
-    bg_color = (0, 128, 0) if prediction_label else (128, 0, 0) # Verde para predição, Vermelho para espera
+    bg_color = (0, 128, 0) if prediction_label else (128, 0, 0)  # Codificando estado através de cores.
 
-    # Calcula o tamanho do texto para desenhar uma caixa de fundo.
+    # Calculando dimensões textuais para posicionamento preciso da interface.
     (text_width, text_height), _ = cv2.getTextSize(display_text, cv2.FONT_HERSHEY_TRIPLEX, 1.0, 2)
     
-    # Define as coordenadas para o retângulo e o texto.
+    # Estabelecendo coordenadas para elementos gráficos de sobreposição.
     rect_start = (frame.shape[1] - text_width - 30, 10)
     rect_end = (frame.shape[1] - 10, 20 + text_height)
     text_pos = (frame.shape[1] - text_width - 20, 10 + text_height)
 
-    # Desenha um retângulo com transparência para destacar o texto.
+    # Aplicando composição alfa para transparência visual elegante.
     overlay = frame.copy()
     cv2.rectangle(overlay, rect_start, rect_end, bg_color, cv2.FILLED)
-    alpha = 0.6  # Nível de transparência.
+    alpha = 0.6  # Definindo grau de opacidade para o efeito de sobreposição.
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
-    # Escreve o texto da predição sobre o retângulo.
+    # Renderizando texto de predição com alta qualidade através de antialiasing.
     cv2.putText(frame, display_text, text_pos, cv2.FONT_HERSHEY_TRIPLEX, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
 
     cv2.imshow("Reconhecimento de Gestos - LIBRAS", frame)
 
     key = cv2.waitKey(1) & 0xFF
-    if key == 27:  # ESC para sair.
+    if key == 27:  # Detectando comando de encerramento através da tecla ESC.
         break
 
-# --- Finalização ---
+# Finalizando execução e liberando recursos alocados
 print("[DEBUG] Saindo do loop principal e liberando recursos.")
 cap.release()
 cv2.destroyAllWindows()
