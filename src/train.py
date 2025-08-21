@@ -1,106 +1,129 @@
 # -*- coding: utf-8 -*-
 """
-Sistema de Treinamento de Rede Neural Convolucional para Reconhecimento de Gestos.
+Sistema de Treinamento Avançado com Aprendizagem por Transferência.
 
-Este módulo implementa o pipeline completo de treinamento do modelo de aprendizado
-profundo. O sistema realiza o carregamento dos dados previamente processados,
-estabelece a arquitetura convolucional apropriada, configura os parâmetros de
-otimização e executa o processo iterativo de aprendizagem, preservando o modelo
-de melhor desempenho baseado em métricas de validação rigorosas.
+Este módulo utiliza um modelo pré-treinado (MobileNetV2) para extrair
+características de alto nível das imagens de gestos. Apenas as camadas
+superiores da rede são treinadas, resultando em um aprendizado mais
+rápido e uma capacidade de generalização superior.
 """
 
 import os
 import numpy as np
-from sklearn.preprocessing import LabelBinarizer
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Model
+# --- MUDANÇA: Importando camadas para o novo modelo e o MobileNetV2 ---
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense, Dropout, GlobalAveragePooling2D
+from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import ModelCheckpoint
-from normalizing import load_and_preprocess_images  # Importando função do módulo de pré-processamento.
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from tensorflow.keras.metrics import Precision, Recall
 
-# Preparando e estruturando o conjunto de dados para treinamento
+# --- Etapa 1: Geração de Dados ---
 
-print("[INFO] Carregando e pré-processando imagens...")
-X, y = load_and_preprocess_images()
+print("[INFO] Configurando geradores de imagem para o modelo MobileNetV2...")
 
-# Aplicando codificação one-hot aos rótulos categóricos, transformando
-# representações textuais discretas em vetores binários esparsos,
-# formato essencial para otimização em problemas de classificação multiclasse.
-encoder = LabelBinarizer()
-y_encoded = encoder.fit_transform(y)
+DATA_DIR = "data/raw"
+IMG_SIZE = (224, 224) # MobileNetV2 funciona bem com essa resolução
+BATCH_SIZE = 32
 
-# Particionando o conjunto de dados em subconjuntos mutuamente exclusivos,
-# destinando 80% das amostras para treinamento e 20% para validação.
-# A estratificação preserva a distribuição proporcional das classes,
-# garantindo representatividade estatística em ambas as partições.
-X_train, X_val, y_train, y_val = train_test_split(
-    X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
+# Usamos a mesma augmentation de antes
+train_datagen = ImageDataGenerator(
+    rescale=1./255,
+    rotation_range=15,
+    width_shift_range=0.15,
+    height_shift_range=0.15,
+    zoom_range=0.15,
+    brightness_range=[0.8, 1.2],
+    validation_split=0.2
 )
 
-# Construindo a arquitetura da rede neural convolucional
+validation_datagen = ImageDataGenerator(
+    rescale=1./255,
+    validation_split=0.2
+)
 
-model = Sequential([
-    # Implementando primeira camada convolucional para extração de 32 mapas
-    # de características através de kernels 3x3, estabelecendo o formato
-    # dimensional de entrada para imagens monocromáticas de 224x224 pixels.
-    Conv2D(32, (3, 3), activation='relu', input_shape=(224, 224, 1)),
-    # Aplicando redução dimensional através de pooling máximo,
-    # preservando características dominantes e reduzindo carga computacional.
-    MaxPooling2D(pool_size=(2, 2)),
+# --- MUDANÇA CRÍTICA: color_mode agora é 'rgb' ---
+# Modelos pré-treinados em ImageNet esperam 3 canais de cor (RGB).
+# O gerador irá converter nossas imagens em escala de cinza para um formato
+# de 3 canais, simplesmente duplicando o canal de cinza.
+train_generator = train_datagen.flow_from_directory(
+    DATA_DIR,
+    target_size=IMG_SIZE,
+    batch_size=BATCH_SIZE,
+    color_mode='rgb', # Alterado de 'grayscale' para 'rgb'
+    class_mode='categorical',
+    subset='training'
+)
 
-    # Adicionando segunda camada convolucional com capacidade expandida
-    # para 64 filtros, permitindo extração de padrões mais complexos e abstratos.
-    Conv2D(64, (3, 3), activation='relu'),
-    MaxPooling2D(pool_size=(2, 2)),
+validation_generator = validation_datagen.flow_from_directory(
+    DATA_DIR,
+    target_size=IMG_SIZE,
+    batch_size=BATCH_SIZE,
+    color_mode='rgb', # Alterado de 'grayscale' para 'rgb'
+    class_mode='categorical',
+    subset='validation'
+)
 
-    # Linearizando a estrutura bidimensional de características em vetor
-    # unidimensional, preparando a transição para camadas densamente conectadas.
-    Flatten(),
-    
-    # Estabelecendo camada densa com 128 unidades neuronais, realizando
-    # combinações não-lineares das características extraídas para classificação.
-    Dense(128, activation='relu'),
-    
-    # Incorporando regularização estocástica através de dropout,
-    # desativando aleatoriamente 50% das conexões durante o treinamento
-    # para mitigação de sobreajuste e melhoria da generalização.
-    Dropout(0.5),
+# --- Etapa 2: Construção do Modelo com Transfer Learning ---
 
-    # Configurando camada de saída com neurônios correspondentes ao número
-    # de classes, empregando ativação softmax para gerar distribuição
-    # probabilística normalizada sobre o espaço de categorias.
-    Dense(y_encoded.shape[1], activation='softmax')
-])
+print("[INFO] Construindo modelo com base no MobileNetV2...")
 
-# Configurando parâmetros de otimização e métricas de avaliação
+# Carrega o MobileNetV2 pré-treinado com os pesos do ImageNet.
+# `include_top=False` remove a camada de classificação original (que classificava 1000 objetos).
+# `input_shape` deve ter 3 canais de cor.
+base_model = MobileNetV2(
+    weights='imagenet',
+    include_top=False,
+    input_shape=(224, 224, 3)
+)
 
-# Compilando o modelo com especificações de treinamento, estabelecendo
-# o otimizador Adam com taxa de aprendizagem de 0.001, função de custo
-# de entropia cruzada categórica e monitoramento de acurácia como métrica principal.
+# "Congelamos" as camadas do modelo base. Seus pesos não serão atualizados
+# durante o treinamento inicial, preservando o conhecimento que já possuem.
+base_model.trainable = False
+
+# Adicionamos nossas próprias camadas de classificação no topo do modelo base.
+x = base_model.output
+x = GlobalAveragePooling2D()(x) # Reduz a dimensionalidade de forma inteligente
+x = Dense(128, activation='relu')(x)
+x = Dropout(0.5)(x)
+predictions = Dense(train_generator.num_classes, activation='softmax')(x)
+
+# Este é o nosso modelo final, que combina a base MobileNetV2 com nossas camadas.
+model = Model(inputs=base_model.input, outputs=predictions)
+
+# --- Etapa 3: Compilação e Treinamento ---
+
 model.compile(optimizer=Adam(learning_rate=0.001),
               loss='categorical_crossentropy',
-              metrics=['accuracy'])
+              metrics=['accuracy', Precision(name='precision'), Recall(name='recall')])
 
-# Exibindo sumário arquitetural detalhado da rede neural.
 model.summary()
 
-# Configurando mecanismo de preservação seletiva de modelos, monitorando
-# a acurácia de validação e armazenando persistentemente apenas a versão
-# de melhor desempenho observado durante o processo iterativo.
 checkpoint = ModelCheckpoint(
-    "models/best_model.keras", monitor='val_accuracy', save_best_only=True, verbose=1
+    "models/best_model_mobilenet.keras", # Novo nome para o modelo
+    monitor='val_accuracy',
+    save_best_only=True,
+    verbose=1
 )
 
-print("[INFO] Iniciando o treinamento do modelo...")
-
-# Executando o processo de otimização iterativa dos parâmetros da rede.
-model.fit(
-    X_train, y_train,              # Fornecendo dados de treinamento.
-    epochs=10,                     # Definindo número de iterações completas sobre o dataset.
-    batch_size=32,                 # Especificando tamanho do lote para atualização de gradientes.
-    validation_data=(X_val, y_val),# Estabelecendo conjunto de validação para avaliação periódica.
-    callbacks=[checkpoint]         # Ativando mecanismos de callback durante o treinamento.
+early_stopping = EarlyStopping(
+    monitor='val_loss',
+    patience=5,
+    restore_best_weights=True,
+    verbose=1
 )
 
-print("[INFO] Treinamento finalizado. Melhor modelo salvo em 'models/best_model.keras'.")
+print("[INFO] Iniciando o treinamento do modelo de Transfer Learning...")
+
+history = model.fit(
+    train_generator,
+    epochs=20,
+    validation_data=validation_generator,
+    callbacks=[checkpoint, early_stopping]
+)
+
+print("[INFO] Salvando histórico de treinamento...")
+np.save('training_history_mobilenet.npy', history.history)
+
+print("[INFO] Treinamento finalizado. Melhor modelo salvo em 'models/best_model_mobilenet.keras'.")

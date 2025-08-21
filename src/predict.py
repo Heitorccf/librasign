@@ -1,66 +1,84 @@
 # -*- coding: utf-8 -*-
 """
-Sistema de Reconhecimento e Predição de Gestos em Tempo Real.
+Script para Predição em Tempo Real com Arquitetura Multithread.
 
-Este módulo constitui a aplicação final do sistema de reconhecimento de Libras,
-integrando o modelo de rede neural convolucional previamente treinado com um
-pipeline de captura e processamento de vídeo. O sistema realiza a detecção
-contínua de gestos manuais através da webcam, processando cada quadro em
-tempo real e classificando o gesto capturado em sua respectiva letra do
-alfabeto, apresentando os resultados através de uma interface visual interativa.
+Este módulo implementa a aplicação final com otimizações de performance.
+A captura de vídeo e a inferência do modelo rodam em threads separadas,
+comunicando-se através de uma fila (Queue). Isso garante que a interface
+do usuário permaneça fluida e responsiva, mesmo com modelos mais pesados.
 """
 
 import cv2
 import numpy as np
 import mediapipe as mp
 from tensorflow.keras.models import load_model
-from sklearn.preprocessing import LabelBinarizer
 import os
+# --- MUDANÇA: Importando threading e queue para o processamento paralelo ---
+import threading
+from queue import Queue
 
 print("[DEBUG] Script de predição iniciado.")
-
-# Desabilitando otimizações do oneDNN para garantir consistência e
-# reprodutibilidade nos cálculos numéricos durante a inferência.
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
-# Inicializando recursos e configurações do sistema
+# --- Etapa 1: Configurações e Carregamento ---
 
-MODEL_PATH = "models/best_model.keras"  # Especificando o caminho do modelo pré-treinado.
-IMG_SIZE = 224                          # Definindo dimensões padronizadas para entrada do modelo.
+MODEL_PATH = "models/best_model_mobilenet.keras" # Carrega o novo modelo
+IMG_SIZE = 224
 
 print(f"[INFO] Carregando modelo de: {MODEL_PATH}")
-# Restaurando a arquitetura completa e os parâmetros aprendidos do modelo neural.
 model = load_model(MODEL_PATH)
 print("[DEBUG] Modelo carregado com sucesso.")
 
-# Reconstruindo o mapeamento categórico para decodificação das predições,
-# garantindo correspondência exata com o esquema utilizado durante o treinamento.
+# Recria o mapeamento de rótulos
 labels_path = "data/raw"
-if not os.path.exists(labels_path) or not os.listdir(labels_path):
-    print(f"[ERRO CRÍTICO] Diretório de dados '{labels_path}' não encontrado ou vazio. "
-          "Execute os scripts 'capture.py' e 'train.py' primeiro.")
-    exit()
-
-# Sincronizando o codificador com a estrutura de classes original,
-# preservando a ordenação alfabética para consistência na decodificação.
 labels = sorted(os.listdir(labels_path))
-encoder = LabelBinarizer()
-encoder.fit(labels)
-print("[DEBUG] Rótulos (labels) processados e prontos para decodificação.")
+# O LabelBinarizer não é mais necessário aqui, podemos usar a lista de labels diretamente.
 
-# Configurando o detector de mãos com parâmetros otimizados para
-# minimizar detecções espúrias e maximizar a estabilidade do rastreamento.
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1,
                        min_detection_confidence=0.7, min_tracking_confidence=0.7)
 mp_draw = mp.solutions.drawing_utils
 
-# Executando o ciclo principal de captura e predição
+# --- Etapa 2: Configuração da Arquitetura Multithread ---
+
+# A fila é o nosso "canal de comunicação" entre as threads.
+# A thread de captura coloca imagens aqui, e a de predição as retira.
+prediction_queue = Queue(maxsize=1)
+# Variável global para armazenar a última predição.
+prediction_label = ""
+
+def prediction_worker():
+    """Função que roda na thread de predição (worker)."""
+    global prediction_label
+    while True:
+        # Pega uma imagem da fila. O `get()` bloqueia a thread até que um item esteja disponível.
+        hand_img_roi = prediction_queue.get()
+        if hand_img_roi is None: # Sinal para parar a thread
+            break
+
+        # --- Pré-processamento para o MobileNetV2 ---
+        # Converte a ROI para RGB (mesmo que a original seja BGR).
+        hand_img_rgb = cv2.cvtColor(hand_img_roi, cv2.COLOR_BGR2RGB)
+        hand_img_resized = cv2.resize(hand_img_rgb, (IMG_SIZE, IMG_SIZE))
+        # Normaliza e expande as dimensões para o formato do modelo (1, 224, 224, 3)
+        hand_img_normalized = hand_img_resized.astype(np.float32) / 255.0
+        hand_img_expanded = np.expand_dims(hand_img_normalized, axis=0)
+        
+        # Realiza a inferência
+        prediction = model.predict(hand_img_expanded, verbose=0)
+        predicted_index = np.argmax(prediction)
+        
+        # Atualiza a variável global com o resultado
+        prediction_label = labels[predicted_index]
+
+# Inicia a thread de predição. `daemon=True` faz com que ela feche quando o programa principal fechar.
+threading.Thread(target=prediction_worker, daemon=True).start()
+
+# --- Etapa 3: Loop Principal (Thread de Captura e UI) ---
 
 cap = cv2.VideoCapture(0)
 if not cap.isOpened():
-    print("[ERRO CRÍTICO] Falha ao acessar a webcam. "
-          "Verifique se ela não está em uso por outro aplicativo.")
+    print("[ERRO CRÍTICO] Falha ao acessar a webcam.")
     exit()
 
 print("[INFO] Sistema pronto. Pressione 'ESC' para sair.")
@@ -68,83 +86,61 @@ print("[INFO] Sistema pronto. Pressione 'ESC' para sair.")
 while True:
     ret, frame = cap.read()
     if not ret:
-        print("[AVISO] Falha ao capturar frame da webcam.")
-        continue
+        break
 
     frame = cv2.flip(frame, 1)
     img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     result = hands.process(img_rgb)
-    prediction_label = ""  # Inicializando variável para armazenar a predição atual.
-
+    
+    # Esta thread apenas detecta a mão e coloca na fila. Ela não espera pela predição.
     if result.multi_hand_landmarks:
         for hand_landmarks in result.multi_hand_landmarks:
             mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-
-            # Calculando os limites espaciais da região contendo a mão detectada,
-            # mantendo consistência com o protocolo de captura original.
+            
             h, w, _ = frame.shape
             x_coords = [lm.x * w for lm in hand_landmarks.landmark]
             y_coords = [lm.y * h for lm in hand_landmarks.landmark]
+            
             margin = 20
             x_min, x_max = int(min(x_coords)) - margin, int(max(x_coords)) + margin
             y_min, y_max = int(min(y_coords)) - margin, int(max(y_coords)) + margin
             x_min, y_min = max(x_min, 0), max(y_min, 0)
             x_max, y_max = min(x_max, w), min(y_max, h)
-
+            
             hand_img_roi = frame[y_min:y_max, x_min:x_max]
 
-            if hand_img_roi.size > 0:
-                # Aplicando pipeline de pré-processamento idêntico ao utilizado
-                # durante a fase de treinamento, garantindo consistência na inferência.
-                gray_hand = cv2.cvtColor(hand_img_roi, cv2.COLOR_BGR2GRAY)
-                hand_img_resized = cv2.resize(gray_hand, (IMG_SIZE, IMG_SIZE))
-                hand_img_normalized = hand_img_resized.astype(np.float32) / 255.0
+            # Se a fila estiver vazia, coloca a nova ROI para ser processada.
+            # Isso evita que a thread de predição fique sobrecarregada com imagens antigas.
+            if prediction_queue.empty() and hand_img_roi.size > 0:
+                prediction_queue.put(hand_img_roi)
 
-                # Reestruturando o tensor para conformidade com a arquitetura do modelo.
-                # Adicionando dimensão de lote unitário e canal monocromático,
-                # resultando no formato esperado: (1, 224, 224, 1).
-                hand_img_expanded = np.expand_dims(hand_img_normalized, axis=0)
-                hand_img_expanded = np.expand_dims(hand_img_expanded, axis=-1)
-
-                # Executando inferência através da propagação direta na rede neural.
-                prediction = model.predict(hand_img_expanded, verbose=0)
-                # Identificando a classe de maior probabilidade através do argumento máximo.
-                predicted_index = np.argmax(prediction)
-                # Decodificando o índice numérico para sua representação alfabética.
-                prediction_label = encoder.classes_[predicted_index]
-
-    # Renderizando interface visual com feedback em tempo real
-
-    # Construindo elementos visuais informativos para comunicação efetiva
-    # do estado atual do sistema e resultados da classificação.
+    # --- Seção de Exibição da Interface (UI) ---
+    # A UI apenas lê a variável global `prediction_label` e a exibe.
+    # Ela não se importa com o quão rápido ou lento o modelo é.
     display_text = f"Letra: {prediction_label}" if prediction_label else "Aguardando gesto..."
-    bg_color = (0, 128, 0) if prediction_label else (128, 0, 0)  # Codificando estado através de cores.
+    bg_color = (0, 128, 0) if prediction_label else (128, 0, 0)
 
-    # Calculando dimensões textuais para posicionamento preciso da interface.
     (text_width, text_height), _ = cv2.getTextSize(display_text, cv2.FONT_HERSHEY_TRIPLEX, 1.0, 2)
-    
-    # Estabelecendo coordenadas para elementos gráficos de sobreposição.
     rect_start = (frame.shape[1] - text_width - 30, 10)
     rect_end = (frame.shape[1] - 10, 20 + text_height)
     text_pos = (frame.shape[1] - text_width - 20, 10 + text_height)
 
-    # Aplicando composição alfa para transparência visual elegante.
     overlay = frame.copy()
     cv2.rectangle(overlay, rect_start, rect_end, bg_color, cv2.FILLED)
-    alpha = 0.6  # Definindo grau de opacidade para o efeito de sobreposição.
+    alpha = 0.6
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-
-    # Renderizando texto de predição com alta qualidade através de antialiasing.
     cv2.putText(frame, display_text, text_pos, cv2.FONT_HERSHEY_TRIPLEX, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
 
-    cv2.imshow("Reconhecimento de Gestos - LIBRAS", frame)
+    cv2.imshow("Reconhecimento de Gestos - LIBRAS (Avançado)", frame)
 
     key = cv2.waitKey(1) & 0xFF
-    if key == 27:  # Detectando comando de encerramento através da tecla ESC.
+    if key == 27:
         break
 
-# Finalizando execução e liberando recursos alocados
+# --- Finalização ---
 print("[DEBUG] Saindo do loop principal e liberando recursos.")
+# Envia um sinal para a thread de predição parar
+prediction_queue.put(None)
 cap.release()
 cv2.destroyAllWindows()
 print("[DEBUG] Fim do script.")
