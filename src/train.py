@@ -12,7 +12,6 @@ import os
 import numpy as np
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Model
-# --- MUDANÇA: Importando camadas para o novo modelo e o MobileNetV2 ---
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense, Dropout, GlobalAveragePooling2D
 from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.optimizers import Adam
@@ -24,10 +23,9 @@ from tensorflow.keras.metrics import Precision, Recall
 print("[INFO] Configurando geradores de imagem para o modelo MobileNetV2...")
 
 DATA_DIR = "data/raw"
-IMG_SIZE = (224, 224) # MobileNetV2 funciona bem com essa resolução
+IMG_SIZE = (224, 224)
 BATCH_SIZE = 32
 
-# Usamos a mesma augmentation de antes
 train_datagen = ImageDataGenerator(
     rescale=1./255,
     rotation_range=15,
@@ -43,15 +41,11 @@ validation_datagen = ImageDataGenerator(
     validation_split=0.2
 )
 
-# --- MUDANÇA CRÍTICA: color_mode agora é 'rgb' ---
-# Modelos pré-treinados em ImageNet esperam 3 canais de cor (RGB).
-# O gerador irá converter nossas imagens em escala de cinza para um formato
-# de 3 canais, simplesmente duplicando o canal de cinza.
 train_generator = train_datagen.flow_from_directory(
     DATA_DIR,
     target_size=IMG_SIZE,
     batch_size=BATCH_SIZE,
-    color_mode='rgb', # Alterado de 'grayscale' para 'rgb'
+    color_mode='rgb',
     class_mode='categorical',
     subset='training'
 )
@@ -60,7 +54,7 @@ validation_generator = validation_datagen.flow_from_directory(
     DATA_DIR,
     target_size=IMG_SIZE,
     batch_size=BATCH_SIZE,
-    color_mode='rgb', # Alterado de 'grayscale' para 'rgb'
+    color_mode='rgb',
     class_mode='categorical',
     subset='validation'
 )
@@ -69,27 +63,20 @@ validation_generator = validation_datagen.flow_from_directory(
 
 print("[INFO] Construindo modelo com base no MobileNetV2...")
 
-# Carrega o MobileNetV2 pré-treinado com os pesos do ImageNet.
-# `include_top=False` remove a camada de classificação original (que classificava 1000 objetos).
-# `input_shape` deve ter 3 canais de cor.
 base_model = MobileNetV2(
     weights='imagenet',
     include_top=False,
     input_shape=(224, 224, 3)
 )
 
-# "Congelamos" as camadas do modelo base. Seus pesos não serão atualizados
-# durante o treinamento inicial, preservando o conhecimento que já possuem.
 base_model.trainable = False
 
-# Adicionamos nossas próprias camadas de classificação no topo do modelo base.
 x = base_model.output
-x = GlobalAveragePooling2D()(x) # Reduz a dimensionalidade de forma inteligente
+x = GlobalAveragePooling2D()(x)
 x = Dense(128, activation='relu')(x)
 x = Dropout(0.5)(x)
 predictions = Dense(train_generator.num_classes, activation='softmax')(x)
 
-# Este é o nosso modelo final, que combina a base MobileNetV2 com nossas camadas.
 model = Model(inputs=base_model.input, outputs=predictions)
 
 # --- Etapa 3: Compilação e Treinamento ---
@@ -100,8 +87,9 @@ model.compile(optimizer=Adam(learning_rate=0.001),
 
 model.summary()
 
+# --- MUDANÇA: Salvando o modelo no formato .h5 ---
 checkpoint = ModelCheckpoint(
-    "models/best_model_mobilenet.keras", # Novo nome para o modelo
+    "models/best_model_mobilenet.h5", # Alterado para .h5
     monitor='val_accuracy',
     save_best_only=True,
     verbose=1
@@ -126,4 +114,4 @@ history = model.fit(
 print("[INFO] Salvando histórico de treinamento...")
 np.save('training_history_mobilenet.npy', history.history)
 
-print("[INFO] Treinamento finalizado. Melhor modelo salvo em 'models/best_model_mobilenet.keras'.")
+print("[INFO] Treinamento finalizado. Melhor modelo salvo em 'models/best_model_mobilenet.h5'.")
