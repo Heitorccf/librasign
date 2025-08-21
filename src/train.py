@@ -1,26 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-Sistema de Treinamento Avançado com Aprendizagem por Transferência.
+Sistema de Treinamento Avançado com Fine-Tuning em Duas Etapas.
 
-Este módulo utiliza um modelo pré-treinado (MobileNetV2) para extrair
-características de alto nível das imagens de gestos. Apenas as camadas
-superiores da rede são treinadas, resultando em um aprendizado mais
-rápido e uma capacidade de generalização superior.
+Este módulo implementa o pipeline de treinamento de ponta a ponta,
+utilizando o MobileNetV2 como modelo base. Aplica augmentation de dados
+e uma estratégia de fine-tuning em duas fases para maximizar a capacidade
+de generalização do modelo.
 """
 
 import os
 import numpy as np
+import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense, Dropout, GlobalAveragePooling2D
+from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D
 from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
-from tensorflow.keras.metrics import Precision, Recall
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 
-# --- Etapa 1: Geração de Dados ---
-
-print("[INFO] Configurando geradores de imagem para o modelo MobileNetV2...")
+# --- Etapa 1: Configuração e Geração de Dados ---
+print("[INFO] Configurando geradores de imagem...")
 
 DATA_DIR = "data/raw"
 IMG_SIZE = (224, 224)
@@ -29,17 +28,15 @@ BATCH_SIZE = 32
 train_datagen = ImageDataGenerator(
     rescale=1./255,
     rotation_range=15,
-    width_shift_range=0.15,
-    height_shift_range=0.15,
-    zoom_range=0.15,
+    width_shift_range=0.1,
+    height_shift_range=0.1,
+    zoom_range=0.1,
+    horizontal_flip=True,
     brightness_range=[0.8, 1.2],
     validation_split=0.2
 )
 
-validation_datagen = ImageDataGenerator(
-    rescale=1./255,
-    validation_split=0.2
-)
+validation_datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)
 
 train_generator = train_datagen.flow_from_directory(
     DATA_DIR,
@@ -47,7 +44,8 @@ train_generator = train_datagen.flow_from_directory(
     batch_size=BATCH_SIZE,
     color_mode='rgb',
     class_mode='categorical',
-    subset='training'
+    subset='training',
+    shuffle=True
 )
 
 validation_generator = validation_datagen.flow_from_directory(
@@ -59,59 +57,86 @@ validation_generator = validation_datagen.flow_from_directory(
     subset='validation'
 )
 
-# --- Etapa 2: Construção do Modelo com Transfer Learning ---
+NUM_CLASSES = train_generator.num_classes
 
-print("[INFO] Construindo modelo com base no MobileNetV2...")
+# --- Etapa 2: Construção do Modelo ---
+print(f"[INFO] Construindo modelo com base no MobileNetV2...")
 
 base_model = MobileNetV2(
-    weights='imagenet',
+    input_shape=IMG_SIZE + (3,),
     include_top=False,
-    input_shape=(224, 224, 3)
+    weights='imagenet'
 )
 
 base_model.trainable = False
 
 x = base_model.output
 x = GlobalAveragePooling2D()(x)
-x = Dense(128, activation='relu')(x)
-x = Dropout(0.5)(x)
-predictions = Dense(train_generator.num_classes, activation='softmax')(x)
+x = Dropout(0.3)(x)
+predictions = Dense(NUM_CLASSES, activation='softmax')(x)
 
 model = Model(inputs=base_model.input, outputs=predictions)
 
-# --- Etapa 3: Compilação e Treinamento ---
-
-model.compile(optimizer=Adam(learning_rate=0.001),
-              loss='categorical_crossentropy',
-              metrics=['accuracy', Precision(name='precision'), Recall(name='recall')])
-
 model.summary()
 
-# --- MUDANÇA: Salvando o modelo no formato .h5 ---
-checkpoint = ModelCheckpoint(
-    "models/best_model_mobilenet.h5", # Alterado para .h5
+# --- Etapa 3.1: Treinamento da Cabeça ---
+print("\n[FASE 1] Treinando apenas a cabeça de classificação...")
+
+model.compile(
+    optimizer=Adam(learning_rate=0.001),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+# Salva o modelo intermediário (apenas com a "cabeça" treinada)
+checkpoint_head = ModelCheckpoint(
+    "models/librasign_head.keras", # Nome intermediário simplificado
     monitor='val_accuracy',
     save_best_only=True,
     verbose=1
 )
+early_stopping = EarlyStopping(monitor='val_loss', patience=5, verbose=1)
 
-early_stopping = EarlyStopping(
-    monitor='val_loss',
-    patience=5,
-    restore_best_weights=True,
+history_head = model.fit(
+    train_generator,
+    epochs=15,
+    validation_data=validation_generator,
+    callbacks=[checkpoint_head, early_stopping]
+)
+
+# --- Etapa 3.2: Fine-Tuning do Modelo Completo ---
+print("\n[FASE 2] Realizando fine-tuning das camadas superiores...")
+
+# Carrega o melhor modelo da Fase 1
+model.load_weights("models/librasign_head.keras")
+
+# Descongela o modelo base
+base_model.trainable = True
+print(f"[INFO] Modelo base descongelado. Número de camadas treináveis: {len(model.trainable_variables)}")
+
+# Recompila com uma taxa de aprendizado muito baixa
+model.compile(
+    optimizer=Adam(learning_rate=1e-5),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+model.summary()
+
+# --- MUDANÇA: Nome final do modelo alterado ---
+checkpoint_fine_tune = ModelCheckpoint(
+    "models/librasign.keras", # Nome final e simplificado
+    monitor='val_accuracy',
+    save_best_only=True,
     verbose=1
 )
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=2, min_lr=1e-6, verbose=1)
 
-print("[INFO] Iniciando o treinamento do modelo de Transfer Learning...")
-
-history = model.fit(
+history_fine_tune = model.fit(
     train_generator,
-    epochs=20,
+    epochs=15,
     validation_data=validation_generator,
-    callbacks=[checkpoint, early_stopping]
+    callbacks=[checkpoint_fine_tune, early_stopping, reduce_lr]
 )
 
-print("[INFO] Salvando histórico de treinamento...")
-np.save('training_history_mobilenet.npy', history.history)
-
-print("[INFO] Treinamento finalizado. Melhor modelo salvo em 'models/best_model_mobilenet.h5'.")
+print("[INFO] Treinamento finalizado. Melhor modelo salvo em 'models/librasign.keras'.")

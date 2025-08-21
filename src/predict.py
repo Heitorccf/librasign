@@ -22,7 +22,8 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 # --- Etapa 1: Configurações e Carregamento ---
 
-MODEL_PATH = "models/best_model_mobilenet.keras" # Carrega o novo modelo
+# --- MUDANÇA: Atualizado para carregar o novo modelo final ---
+MODEL_PATH = "models/librasign.keras"
 IMG_SIZE = 224
 
 print(f"[INFO] Carregando modelo de: {MODEL_PATH}")
