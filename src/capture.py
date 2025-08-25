@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-Sistema de Aquisição de Dados Visuais para Treinamento de Modelo de Reconhecimento.
+Ferramenta Avançada para Captura de Dados Visuais.
 
-Este módulo implementa a captura sistemática de imagens da Língua Brasileira de 
-Sinais (Libras) utilizando dispositivo de câmera. O sistema emprega a biblioteca 
-OpenCV para gerenciamento da interface de vídeo e o framework MediaPipe para 
-detecção e rastreamento de mãos em tempo real, realizando o recorte automático 
-da região de interesse e armazenamento estruturado dos dados coletados.
+Este módulo foi reestruturado para facilitar a coleta de um dataset em larga
+escala. Implementa um limite de captura por classe, pré-processamento de
+imagem em tempo real (equalização de histograma) e um fluxo de trabalho
+interativo que permite ao usuário iniciar, pausar e alternar entre a
+captura de diferentes gestos sem reiniciar a aplicação.
 """
 
 import cv2
@@ -14,136 +14,142 @@ import mediapipe as mp
 import os
 from datetime import datetime
 
-# Configurando os componentes fundamentais do sistema
-
-# Inicializando o módulo de detecção de mãos do MediaPipe com parâmetros
-# otimizados para o contexto de captura individual. A restrição para detecção
-# de uma única mão maximiza a eficiência computacional e mantém o foco no
-# objetivo específico do projeto.
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1)
-
-# Carregando as ferramentas de renderização visual do MediaPipe para 
-# representação gráfica dos pontos de referência anatômicos detectados.
-mp_draw = mp.solutions.drawing_utils
-
-# Definindo parâmetros operacionais do sistema
-
-# Estabelecendo o diretório base para armazenamento hierárquico dos dados.
-# A estrutura de pastas seguirá o padrão de categorização por classe alfabética.
+# --- Configurações ---
 DATA_DIR = "data/raw"
-
-# Especificando as dimensões padronizadas para as imagens processadas.
-# A padronização dimensional é requisito fundamental para o treinamento
-# eficaz de arquiteturas convolucionais.
 IMG_SIZE = 224
+CAPTURE_LIMIT = 1000 # Limite de 1000 fotos por gesto
 
-# Executando o ciclo principal de aquisição de dados
-
-# Estabelecendo conexão com o dispositivo de captura de vídeo padrão do sistema.
+# --- Inicialização de Componentes ---
+mp_hands = mp.solutions.hands
+hands = mp.solutions.hands.Hands(static_image_mode=False, max_num_hands=1,
+                                 min_detection_confidence=0.7, min_tracking_confidence=0.7)
+mp_draw = mp.solutions.drawing_utils
 cap = cv2.VideoCapture(0)
 
-print("[INFO] Pressione uma tecla (A-Z) para iniciar a captura de imagens para essa letra.")
-print("[INFO] Pressione a tecla 'ESC' para finalizar a execução.")
+# --- Variáveis de Controle de Estado ---
+capturing = False     # Controla se a captura está ativa ou pausada
+current_label = None  # Letra ou classe atual sendo capturada
+img_count = 0         # Contador de imagens para a classe atual
 
-current_label = None  # Armazenando o identificador da classe em captura.
-img_count = 0         # Contabilizando as amostras coletadas por classe.
+print("-" * 50)
+print("Ferramenta de Captura de Dataset - LIBRAS")
+print("-" * 50)
+print("INSTRUÇÕES:")
+print(" > Pressione uma tecla (A-Z) para INICIAR a captura para essa letra.")
+print(" > Pressione '0' para INICIAR a captura da classe 'Nenhum'.")
+print(" > Pressione 'ESPAÇO' para PAUSAR ou RETOMAR a captura.")
+print(" > Pressione 'ESC' para FINALIZAR o programa.")
+print("-" * 50)
 
 while True:
-    # Capturando o quadro atual do fluxo de vídeo. O valor booleano 'ret'
-    # indica o sucesso da operação, enquanto 'frame' contém os dados da imagem.
     ret, frame = cap.read()
     if not ret:
-        print("[AVISO] Não foi possível capturar o frame. Encerrando.")
+        print("[ERRO] Não foi possível acessar a câmera.")
         break
 
-    # Aplicando transformação de espelhamento horizontal para proporcionar
-    # uma experiência mais natural ao usuário durante a interação.
     frame = cv2.flip(frame, 1)
+    img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    result = hands.process(img_rgb)
 
-    # Convertendo o espaço de cores de BGR (convenção OpenCV) para RGB,
-    # adequando o formato aos requisitos de entrada do MediaPipe.
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-    # Processando o quadro para identificação de estruturas anatômicas da mão.
-    result = hands.process(frame_rgb)
-
-    # Verificando a presença de detecções válidas no quadro processado.
+    # Lógica de processamento e salvamento da imagem
     if result.multi_hand_landmarks:
-        # Iterando sobre as detecções identificadas (limitadas a uma neste contexto).
         for hand_landmarks in result.multi_hand_landmarks:
-            # Desenhando a representação visual dos pontos e conexões anatômicas.
             mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-            # Extraindo as dimensões do quadro para conversão de coordenadas
-            # normalizadas (intervalo [0,1]) para coordenadas absolutas em pixels.
-            h, w, _ = frame.shape
-            x_coords = [lm.x * w for lm in hand_landmarks.landmark]
-            y_coords = [lm.y * h for lm in hand_landmarks.landmark]
+            # Só procede com o salvamento se a captura estiver ativa para uma classe
+            if capturing and current_label and img_count < CAPTURE_LIMIT:
+                h, w, _ = frame.shape
+                x_coords = [lm.x * w for lm in hand_landmarks.landmark]
+                y_coords = [lm.y * h for lm in hand_landmarks.landmark]
 
-            # Calculando os limites da região delimitadora com margem de segurança
-            # de 20 pixels, garantindo a captura completa da gesticulação mesmo
-            # durante movimentos dinâmicos.
-            x_min, x_max = int(min(x_coords)) - 20, int(max(x_coords)) + 20
-            y_min, y_max = int(min(y_coords)) - 20, int(max(y_coords)) + 20
+                margin = 20
+                x_min, x_max = int(min(x_coords)) - margin, int(max(x_coords)) + margin
+                y_min, y_max = int(min(y_coords)) - margin, int(max(y_coords)) + margin
+                x_min, y_min = max(x_min, 0), max(y_min, 0)
+                x_max, y_max = min(x_max, w), min(y_max, h)
 
-            # Aplicando restrições aos limites para prevenir extrapolação das
-            # dimensões válidas da imagem.
-            x_min, y_min = max(x_min, 0), max(y_min, 0)
-            x_max, y_max = min(x_max, w), min(y_max, h)
+                hand_img_roi = frame[y_min:y_max, x_min:x_max]
 
-            # Extraindo a região de interesse contendo a mão detectada.
-            hand_img = frame[y_min:y_max, x_min:x_max]
+                if hand_img_roi.size > 0:
+                    gray_hand = cv2.cvtColor(hand_img_roi, cv2.COLOR_BGR2GRAY)
+                    
+                    # --- MUDANÇA: Equalização do Histograma ---
+                    # Normaliza o brilho e o contraste da imagem, tornando o modelo
+                    # mais robusto a diferentes condições de iluminação.
+                    equalized_hand = cv2.equalizeHist(gray_hand)
+                    
+                    resized_hand = cv2.resize(equalized_hand, (IMG_SIZE, IMG_SIZE))
 
-            # Validando a integridade da região extraída antes do processamento.
-            if hand_img.size == 0:
-                continue
+                    save_dir = os.path.join(DATA_DIR, current_label.upper())
+                    os.makedirs(save_dir, exist_ok=True)
+                    timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+                    filename = f"{current_label.upper()}_{timestamp}.jpg"
+                    cv2.imwrite(os.path.join(save_dir, filename), resized_hand)
+                    img_count += 1
 
-            # Convertendo para escala de cinza, eliminando variações cromáticas
-            # irrelevantes e focalizando o aprendizado nas características
-            # morfológicas do gesto.
-            gray_hand_img = cv2.cvtColor(hand_img, cv2.COLOR_BGR2GRAY)
+    # --- Lógica de Exibição de Status na Tela ---
+    status_text = ""
+    status_color = (0, 0, 0) # Preto por padrão
 
-            # Redimensionando a imagem para as dimensões padronizadas do conjunto de dados.
-            gray_hand_img_resized = cv2.resize(gray_hand_img, (IMG_SIZE, IMG_SIZE))
+    if current_label:
+        progress_text = f"Classe: {current_label.upper()} ({img_count}/{CAPTURE_LIMIT})"
+        if capturing:
+            if img_count < CAPTURE_LIMIT:
+                status_text = f"GRAVANDO... (Pressione ESPAÇO para pausar)"
+                status_color = (0, 255, 0) # Verde
+            else:
+                status_text = "LIMITE ATINGIDO! Escolha outra letra."
+                status_color = (0, 0, 255) # Vermelho
+                capturing = False # Para a captura automaticamente
+        else: # Captura pausada ou limite atingido
+             if img_count < CAPTURE_LIMIT:
+                status_text = f"PAUSADO (Pressione ESPAÇO para retomar)"
+                status_color = (0, 255, 255) # Amarelo
+             else:
+                status_text = "LIMITE ATINGIDO! Escolha outra letra."
+                status_color = (0, 0, 255) # Vermelho
+        
+        # Desenha o progresso
+        cv2.putText(frame, progress_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+    else:
+        status_text = "Ocioso: Pressione uma letra (A-Z) ou 0 para iniciar."
 
-            # Persistindo a amostra coletada quando uma classe está selecionada.
-            if current_label:
-                # Construindo o caminho completo do diretório de destino.
-                save_dir = os.path.join(DATA_DIR, current_label.upper())
-                # Criando a estrutura de diretórios necessária.
-                os.makedirs(save_dir, exist_ok=True)
+    # Desenha o status
+    cv2.putText(frame, status_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, status_color, 2)
+    
+    cv2.imshow("Ferramenta de Captura - LIBRAS", frame)
 
-                # Gerando identificador único temporal com precisão de microssegundos.
-                timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-                filename = f"{current_label.upper()}_{timestamp}.jpg"
-
-                # Salvando a imagem processada no sistema de arquivos.
-                cv2.imwrite(os.path.join(save_dir, filename), gray_hand_img_resized)
-                img_count += 1
-
-                # Exibindo indicador visual do progresso da captura.
-                cv2.putText(frame, f"Salvando {current_label.upper()} - {img_count}",
-                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-    # Renderizando a interface visual com as anotações aplicadas.
-    cv2.imshow("Captura de Gestos - LIBRAS", frame)
-
-    # Capturando entrada do teclado com timeout de 1 milissegundo.
+    # --- Lógica de Controle por Teclado ---
     key = cv2.waitKey(1) & 0xFF
 
-    # Verificando condição de término através da tecla ESC (código ASCII 27).
-    if key == 27:
+    if key == 27:  # Tecla ESC para SAIR
         break
-    # Detectando seleção de nova classe através de teclas alfabéticas.
-    elif 65 <= key <= 90 or 97 <= key <= 122:
-        current_label = chr(key).upper()
-        img_count = 0  # Reinicializando o contador para a nova classe.
-        print(f"[INFO] Capturando imagens para a letra: {current_label}")
+    
+    elif key == 32: # Tecla ESPAÇO para PAUSAR/RETOMAR
+        if current_label and img_count < CAPTURE_LIMIT: # Só funciona se uma captura estiver em andamento
+            capturing = not capturing
 
-# Liberando recursos do sistema
+    elif 65 <= key <= 90 or 97 <= key <= 122 or key == ord('0'): # Teclas A-Z ou 0
+        if key == ord('0'):
+            new_label = "nenhum"
+        else:
+            new_label = chr(key).upper()
 
-# Desconectando o dispositivo de captura de vídeo.
+        # Inicia uma nova sessão de captura
+        current_label = new_label
+        save_dir = os.path.join(DATA_DIR, current_label.upper())
+        os.makedirs(save_dir, exist_ok=True)
+        # Conta quantas imagens já existem para continuar de onde parou
+        img_count = len(os.listdir(save_dir))
+        
+        if img_count < CAPTURE_LIMIT:
+            capturing = True # Inicia a captura automaticamente
+            print(f"\n[INFO] Iniciando/Retomando captura para a classe '{current_label.upper()}'. Imagens existentes: {img_count}")
+        else:
+            capturing = False
+            print(f"\n[AVISO] A classe '{current_label.upper()}' já atingiu o limite de {CAPTURE_LIMIT} imagens.")
+
+# --- Finalização ---
+print("[INFO] Encerrando aplicação...")
 cap.release()
-# Fechando todas as interfaces gráficas instanciadas.
 cv2.destroyAllWindows()

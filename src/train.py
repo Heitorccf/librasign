@@ -3,9 +3,9 @@
 Sistema de Treinamento Avançado com Fine-Tuning em Duas Etapas.
 
 Este módulo implementa o pipeline de treinamento de ponta a ponta,
-utilizando o MobileNetV2 como modelo base. Aplica augmentation de dados
-e uma estratégia de fine-tuning em duas fases para maximizar a capacidade
-de generalização do modelo.
+utilizando o MobileNetV2 como modelo base. Utiliza uma estratégia de
+fine-tuning em duas fases para maximizar a capacidade de generalização
+do modelo a partir de um dataset curado.
 """
 
 import os
@@ -25,14 +25,10 @@ DATA_DIR = "data/raw"
 IMG_SIZE = (224, 224)
 BATCH_SIZE = 32
 
+# --- MUDANÇA: Data Augmentation foi REMOVIDO do gerador de treinamento ---
+# Agora, o gerador apenas normaliza os pixels (rescale) e separa os dados.
 train_datagen = ImageDataGenerator(
     rescale=1./255,
-    rotation_range=15,
-    width_shift_range=0.1,
-    height_shift_range=0.1,
-    zoom_range=0.1,
-    horizontal_flip=True,
-    brightness_range=[0.8, 1.2],
     validation_split=0.2
 )
 
@@ -88,9 +84,8 @@ model.compile(
     metrics=['accuracy']
 )
 
-# Salva o modelo intermediário (apenas com a "cabeça" treinada)
 checkpoint_head = ModelCheckpoint(
-    "models/librasign_head.keras", # Nome intermediário simplificado
+    "models/librasign_head.keras",
     monitor='val_accuracy',
     save_best_only=True,
     verbose=1
@@ -107,14 +102,11 @@ history_head = model.fit(
 # --- Etapa 3.2: Fine-Tuning do Modelo Completo ---
 print("\n[FASE 2] Realizando fine-tuning das camadas superiores...")
 
-# Carrega o melhor modelo da Fase 1
 model.load_weights("models/librasign_head.keras")
 
-# Descongela o modelo base
 base_model.trainable = True
 print(f"[INFO] Modelo base descongelado. Número de camadas treináveis: {len(model.trainable_variables)}")
 
-# Recompila com uma taxa de aprendizado muito baixa
 model.compile(
     optimizer=Adam(learning_rate=1e-5),
     loss='categorical_crossentropy',
@@ -123,9 +115,8 @@ model.compile(
 
 model.summary()
 
-# --- MUDANÇA: Nome final do modelo alterado ---
 checkpoint_fine_tune = ModelCheckpoint(
-    "models/librasign.keras", # Nome final e simplificado
+    "models/librasign.keras",
     monitor='val_accuracy',
     save_best_only=True,
     verbose=1
