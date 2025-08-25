@@ -17,7 +17,8 @@ from datetime import datetime
 # --- Configurações ---
 DATA_DIR = "data/raw"
 IMG_SIZE = 224
-CAPTURE_LIMIT = 1000 # Limite de 1000 fotos por gesto
+# --- MUDANÇA: Limite de captura alterado para 2000 ---
+CAPTURE_LIMIT = 2000 # Limite de 2000 fotos por gesto
 
 # --- Inicialização de Componentes ---
 mp_hands = mp.solutions.hands
@@ -37,7 +38,7 @@ print("-" * 50)
 print("INSTRUÇÕES:")
 print(" > Pressione uma tecla (A-Z) para INICIAR a captura para essa letra.")
 print(" > Pressione '0' para INICIAR a captura da classe 'Nenhum'.")
-print(" > Pressione 'ESPAÇO' para PAUSAR ou RETOMAR a captura.")
+print(" > Pressione 'ESPACO' para PAUSAR ou RETOMAR a captura.")
 print(" > Pressione 'ESC' para FINALIZAR o programa.")
 print("-" * 50)
 
@@ -83,30 +84,29 @@ while True:
 
     # --- Lógica de Exibição de Status na Tela ---
     status_text = ""
-    status_color = (0, 0, 0)
+    status_color = (0, 0, 0) # Preto por padrão
 
     if current_label:
         progress_text = f"Classe: {current_label.upper()} ({img_count}/{CAPTURE_LIMIT})"
         if capturing:
             if img_count < CAPTURE_LIMIT:
-                status_text = "GRAVANDO... (Pressione ESPAÇO para pausar)"
+                status_text = "GRAVANDO... (Pressione SPACE para pausar)"
                 status_color = (0, 255, 0) # Verde
             else:
                 status_text = "LIMITE ATINGIDO! Escolha outra letra."
                 status_color = (0, 0, 255) # Vermelho
-                capturing = False
-        else:
+                capturing = False # Para a captura automaticamente
+        else: # Captura pausada ou limite atingido
              if img_count < CAPTURE_LIMIT:
-                status_text = "PAUSADO (Pressione ESPAÇO para retomar)"
+                status_text = "PAUSADO (Pressione SPACE para retomar)"
                 status_color = (0, 255, 255) # Amarelo
              else:
                 status_text = "LIMITE ATINGIDO! Escolha outra letra."
                 status_color = (0, 0, 255) # Vermelho
         
+        # Desenha o progresso
         cv2.putText(frame, progress_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
         cv2.putText(frame, status_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, status_color, 2)
-    
-    # --- MUDANÇA: Mensagem de "Ocioso" dividida em duas linhas ---
     else:
         status_text_line1 = "Ocioso: Pressione uma letra (A-Z)"
         status_text_line2 = "ou 0 para iniciar."
@@ -118,26 +118,28 @@ while True:
     # --- Lógica de Controle por Teclado ---
     key = cv2.waitKey(1) & 0xFF
 
-    if key == 27:
+    if key == 27:  # Tecla ESC para SAIR
         break
     
-    elif key == 32:
-        if current_label and img_count < CAPTURE_LIMIT:
+    elif key == 32: # Tecla ESPAÇO para PAUSAR/RETOMAR
+        if current_label and img_count < CAPTURE_LIMIT: # Só funciona se uma captura estiver em andamento
             capturing = not capturing
 
-    elif 65 <= key <= 90 or 97 <= key <= 122 or key == ord('0'):
+    elif 65 <= key <= 90 or 97 <= key <= 122 or key == ord('0'): # Teclas A-Z ou 0
         if key == ord('0'):
             new_label = "nenhum"
         else:
             new_label = chr(key).upper()
 
+        # Inicia uma nova sessão de captura
         current_label = new_label
         save_dir = os.path.join(DATA_DIR, current_label.upper())
         os.makedirs(save_dir, exist_ok=True)
+        # Conta quantas imagens já existem para continuar de onde parou
         img_count = len(os.listdir(save_dir))
         
         if img_count < CAPTURE_LIMIT:
-            capturing = True
+            capturing = True # Inicia a captura automaticamente
             print(f"\n[INFO] Iniciando/Retomando captura para a classe '{current_label.upper()}'. Imagens existentes: {img_count}")
         else:
             capturing = False
