@@ -38,6 +38,7 @@ logs/
 
 # Dados capturados (ignorar conteúdo de data/raw/)
 data/raw/
+data/landmarks/
 
 # Modelos treinados (ignorar conteúdo de models/)
 models/
