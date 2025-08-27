@@ -1,133 +1,76 @@
 # -*- coding: utf-8 -*-
 """
-Sistema de Treinamento Avançado com Fine-Tuning em Duas Etapas.
-
-Este módulo implementa o pipeline de treinamento de ponta a ponta,
-utilizando o MobileNetV2 como modelo base. Utiliza uma estratégia de
-fine-tuning em duas fases para maximizar a capacidade de generalização
-do modelo a partir de um dataset curado.
+Treinamento de um Modelo Leve (MLP) com Dados de Landmarks e
+Geração de Histórico para Análise.
 """
-
 import os
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.neural_network import MLPClassifier
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.metrics import accuracy_score
+import pickle
 
-# --- Etapa 1: Configuração e Geração de Dados ---
-print("[INFO] Configurando geradores de imagem...")
+# --- Carregamento dos Dados ---
+print("[INFO] Carregando dataset de landmarks...")
+DATA_DIR = "data/landmarks"
+X, y = [], []
 
-DATA_DIR = "data/raw"
-IMG_SIZE = (224, 224)
-BATCH_SIZE = 32
+# Carrega os dados e os rótulos de cada arquivo .csv
+for file in os.listdir(DATA_DIR):
+    if file.endswith('.csv'):
+        label = file.split('.')[0]
+        df = pd.read_csv(os.path.join(DATA_DIR, file), header=None)
+        X.append(df.values)
+        y.extend([label] * len(df))
 
-# --- MUDANÇA: Data Augmentation foi REMOVIDO do gerador de treinamento ---
-# Agora, o gerador apenas normaliza os pixels (rescale) e separa os dados.
-train_datagen = ImageDataGenerator(
-    rescale=1./255,
-    validation_split=0.2
-)
+X = np.vstack(X)
 
-validation_datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)
+# --- MUDANÇA: Usando LabelEncoder para converter rótulos de texto para números ---
+# O scikit-learn funciona melhor com rótulos numéricos.
+le = LabelEncoder()
+y_encoded = le.fit_transform(y)
+# Salva as classes para uso posterior no notebook
+np.save('models/classes.npy', le.classes_)
 
-train_generator = train_datagen.flow_from_directory(
-    DATA_DIR,
-    target_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    color_mode='rgb',
-    class_mode='categorical',
-    subset='training',
-    shuffle=True
-)
+# --- Preparação dos Dados ---
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
 
-validation_generator = validation_datagen.flow_from_directory(
-    DATA_DIR,
-    target_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    color_mode='rgb',
-    class_mode='categorical',
-    subset='validation'
-)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
 
-NUM_CLASSES = train_generator.num_classes
+# --- MUDANÇA: Treinamento Iterativo para Gerar a Curva de Perda ---
+print("[INFO] Treinando o modelo MLPClassifier iterativamente...")
+model = MLPClassifier(hidden_layer_sizes=(128, 64), max_iter=1, warm_start=True, random_state=42, verbose=False)
 
-# --- Etapa 2: Construção do Modelo ---
-print(f"[INFO] Construindo modelo com base no MobileNetV2...")
+loss_history = []
+n_epochs = 100 # Número de "épocas" que vamos treinar
 
-base_model = MobileNetV2(
-    input_shape=IMG_SIZE + (3,),
-    include_top=False,
-    weights='imagenet'
-)
+for epoch in range(n_epochs):
+    model.fit(X_train_scaled, y_train)
+    loss_history.append(model.loss_)
+    print(f"Época {epoch + 1}/{n_epochs} - Perda: {model.loss_:.4f}", end='\r')
 
-base_model.trainable = False
+print(f"\n[INFO] Treinamento finalizado após {model.n_iter_} iterações.")
 
-x = base_model.output
-x = GlobalAveragePooling2D()(x)
-x = Dropout(0.3)(x)
-predictions = Dense(NUM_CLASSES, activation='softmax')(x)
+# --- Avaliação ---
+print("[INFO] Avaliando o modelo...")
+y_pred = model.predict(X_test_scaled)
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Acurácia final do modelo nos dados de teste: {accuracy * 100:.2f}%")
 
-model = Model(inputs=base_model.input, outputs=predictions)
+# --- Salvando o Modelo, o Scaler e o Histórico ---
+print("[INFO] Salvando artefatos do modelo...")
+os.makedirs("models", exist_ok=True)
+with open("models/librasign_mlp.pkl", 'wb') as f:
+    pickle.dump(model, f)
+with open("models/scaler.pkl", 'wb') as f:
+    pickle.dump(scaler, f)
 
-model.summary()
+# Salva o histórico de perda e os dados de teste para o notebook
+np.save('models/loss_history.npy', loss_history)
+np.save('models/test_data.npy', {'X_test': X_test_scaled, 'y_test': y_test})
 
-# --- Etapa 3.1: Treinamento da Cabeça ---
-print("\n[FASE 1] Treinando apenas a cabeça de classificação...")
-
-model.compile(
-    optimizer=Adam(learning_rate=0.001),
-    loss='categorical_crossentropy',
-    metrics=['accuracy']
-)
-
-checkpoint_head = ModelCheckpoint(
-    "models/librasign_head.keras",
-    monitor='val_accuracy',
-    save_best_only=True,
-    verbose=1
-)
-early_stopping = EarlyStopping(monitor='val_loss', patience=5, verbose=1)
-
-history_head = model.fit(
-    train_generator,
-    epochs=15,
-    validation_data=validation_generator,
-    callbacks=[checkpoint_head, early_stopping]
-)
-
-# --- Etapa 3.2: Fine-Tuning do Modelo Completo ---
-print("\n[FASE 2] Realizando fine-tuning das camadas superiores...")
-
-model.load_weights("models/librasign_head.keras")
-
-base_model.trainable = True
-print(f"[INFO] Modelo base descongelado. Número de camadas treináveis: {len(model.trainable_variables)}")
-
-model.compile(
-    optimizer=Adam(learning_rate=1e-5),
-    loss='categorical_crossentropy',
-    metrics=['accuracy']
-)
-
-model.summary()
-
-checkpoint_fine_tune = ModelCheckpoint(
-    "models/librasign.keras",
-    monitor='val_accuracy',
-    save_best_only=True,
-    verbose=1
-)
-reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=2, min_lr=1e-6, verbose=1)
-
-history_fine_tune = model.fit(
-    train_generator,
-    epochs=15,
-    validation_data=validation_generator,
-    callbacks=[checkpoint_fine_tune, early_stopping, reduce_lr]
-)
-
-print("[INFO] Treinamento finalizado. Melhor modelo salvo em 'models/librasign.keras'.")
+print("[INFO] Processo concluído com sucesso.")

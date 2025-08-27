@@ -1,151 +1,125 @@
 # -*- coding: utf-8 -*-
 """
-Ferramenta Avançada para Captura de Dados Visuais.
+Ferramenta para Captura de Dados Geométricos (Landmarks) - Versão Estável
 
-Este módulo foi reestruturado para facilitar a coleta de um dataset em larga
-escala. Implementa um limite de captura por classe, pré-processamento de
-imagem em tempo real (equalização de histograma) e um fluxo de trabalho
-interativo que permite ao usuário iniciar, pausar e alternar entre a
-captura de diferentes gestos sem reiniciar a aplicação.
+Este módulo foca na extração robusta de coordenadas 3D da mão,
+salvando-as em um formato CSV. A estrutura foi simplificada para
+garantir máxima estabilidade e exibir feedback visual contínuo.
 """
-
 import cv2
 import mediapipe as mp
 import os
-from datetime import datetime
+import numpy as np
+import csv
 
 # --- Configurações ---
-DATA_DIR = "data/raw"
-IMG_SIZE = 224
-# --- MUDANÇA: Limite de captura alterado para 2000 ---
-CAPTURE_LIMIT = 2000 # Limite de 2000 fotos por gesto
+DATA_DIR = "data/landmarks"
+CAPTURE_LIMIT = 1000  # Limite de capturas por classe
 
 # --- Inicialização de Componentes ---
 mp_hands = mp.solutions.hands
-hands = mp.solutions.hands.Hands(static_image_mode=False, max_num_hands=1,
-                                 min_detection_confidence=0.7, min_tracking_confidence=0.7)
-mp_draw = mp.solutions.drawing_utils
+mp_drawing = mp.solutions.drawing_utils
+hands = mp_hands.Hands(static_image_mode=False,
+                       max_num_hands=1,
+                       min_detection_confidence=0.7,
+                       min_tracking_confidence=0.7)
+
 cap = cv2.VideoCapture(0)
 
 # --- Variáveis de Controle de Estado ---
-capturing = False     # Controla se a captura está ativa ou pausada
-current_label = None  # Letra ou classe atual sendo capturada
-img_count = 0         # Contador de imagens para a classe atual
+is_capturing = False
+current_label = None
+capture_count = 0
 
 print("-" * 50)
-print("Ferramenta de Captura de Dataset - LIBRAS")
-print("-" * 50)
+print("Ferramenta de Captura de Landmarks - LIBRAS")
 print("INSTRUÇÕES:")
-print(" > Pressione uma tecla (A-Z) para INICIAR a captura para essa letra.")
-print(" > Pressione '0' para INICIAR a captura da classe 'Nenhum'.")
-print(" > Pressione 'ESPACO' para PAUSAR ou RETOMAR a captura.")
-print(" > Pressione 'ESC' para FINALIZAR o programa.")
+print(" > Pressione uma letra (A-Z) ou 0 para iniciar a captura.")
+print(" > Pressione 'ESPACO' para pausar/retomar.")
+print(" > Pressione 'ESC' para sair.")
 print("-" * 50)
 
-while True:
+while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
-        print("[ERRO] Não foi possível acessar a câmera.")
-        break
+        print("[AVISO] Frame da câmera não pôde ser lido.")
+        continue
 
     frame = cv2.flip(frame, 1)
-    img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    result = hands.process(img_rgb)
+    
+    frame.flags.writeable = False
+    image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = hands.process(image_rgb)
+    frame.flags.writeable = True
 
-    # Lógica de processamento e salvamento da imagem
-    if result.multi_hand_landmarks:
-        for hand_landmarks in result.multi_hand_landmarks:
-            mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+    # Lógica de captura e salvamento
+    if results.multi_hand_landmarks:
+        for hand_landmarks in results.multi_hand_landmarks:
+            # --- MUDANÇA: O desenho agora é feito sempre que uma mão é detectada ---
+            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            
+            # A lógica de SALVAR os dados continua dentro da condição de captura
+            if is_capturing and current_label and capture_count < CAPTURE_LIMIT:
+                try:
+                    landmarks = hand_landmarks.landmark
+                    coords = np.array([[lm.x, lm.y, lm.z] for lm in landmarks]).flatten()
+                    
+                    os.makedirs(DATA_DIR, exist_ok=True)
+                    csv_path = os.path.join(DATA_DIR, f"{current_label}.csv")
+                    
+                    with open(csv_path, 'a', newline='') as f:
+                        writer = csv.writer(f)
+                        writer.writerow(coords)
+                    
+                    capture_count += 1
+                except Exception as e:
+                    print(f"[ERRO] Falha ao salvar os dados: {e}")
 
-            if capturing and current_label and img_count < CAPTURE_LIMIT:
-                h, w, _ = frame.shape
-                x_coords = [lm.x * w for lm in hand_landmarks.landmark]
-                y_coords = [lm.y * h for lm in hand_landmarks.landmark]
-
-                margin = 20
-                x_min, x_max = int(min(x_coords)) - margin, int(max(x_coords)) + margin
-                y_min, y_max = int(min(y_coords)) - margin, int(max(y_coords)) + margin
-                x_min, y_min = max(x_min, 0), max(y_min, 0)
-                x_max, y_max = min(x_max, w), min(y_max, h)
-
-                hand_img_roi = frame[y_min:y_max, x_min:x_max]
-
-                if hand_img_roi.size > 0:
-                    gray_hand = cv2.cvtColor(hand_img_roi, cv2.COLOR_BGR2GRAY)
-                    equalized_hand = cv2.equalizeHist(gray_hand)
-                    resized_hand = cv2.resize(equalized_hand, (IMG_SIZE, IMG_SIZE))
-
-                    save_dir = os.path.join(DATA_DIR, current_label.upper())
-                    os.makedirs(save_dir, exist_ok=True)
-                    timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-                    filename = f"{current_label.upper()}_{timestamp}.jpg"
-                    cv2.imwrite(os.path.join(save_dir, filename), resized_hand)
-                    img_count += 1
-
-    # --- Lógica de Exibição de Status na Tela ---
-    status_text = ""
-    status_color = (0, 0, 0) # Preto por padrão
-
+    # UI para exibir o status
+    status_text = "Ocioso. Escolha uma letra para iniciar."
     if current_label:
-        progress_text = f"Classe: {current_label.upper()} ({img_count}/{CAPTURE_LIMIT})"
-        if capturing:
-            if img_count < CAPTURE_LIMIT:
-                status_text = "GRAVANDO... (Pressione SPACE para pausar)"
-                status_color = (0, 255, 0) # Verde
-            else:
-                status_text = "LIMITE ATINGIDO! Escolha outra letra."
-                status_color = (0, 0, 255) # Vermelho
-                capturing = False # Para a captura automaticamente
-        else: # Captura pausada ou limite atingido
-             if img_count < CAPTURE_LIMIT:
-                status_text = "PAUSADO (Pressione SPACE para retomar)"
-                status_color = (0, 255, 255) # Amarelo
-             else:
-                status_text = "LIMITE ATINGIDO! Escolha outra letra."
-                status_color = (0, 0, 255) # Vermelho
-        
-        # Desenha o progresso
-        cv2.putText(frame, progress_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-        cv2.putText(frame, status_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, status_color, 2)
-    else:
-        status_text_line1 = "Ocioso: Pressione uma letra (A-Z)"
-        status_text_line2 = "ou 0 para iniciar."
-        cv2.putText(frame, status_text_line1, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,0), 2)
-        cv2.putText(frame, status_text_line2, (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,0), 2)
+        if capture_count >= CAPTURE_LIMIT:
+            is_capturing = False
+            status_text = f"CLASSE '{current_label}' COMPLETA ({capture_count}/{CAPTURE_LIMIT})"
+        elif is_capturing:
+            status_text = f"GRAVANDO '{current_label}' ({capture_count}/{CAPTURE_LIMIT})"
+        else:
+            status_text = f"PAUSADO '{current_label}' ({capture_count}/{CAPTURE_LIMIT})"
     
-    cv2.imshow("Ferramenta de Captura - LIBRAS", frame)
+    cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+    cv2.imshow("Captura de Landmarks - LIBRAS", frame)
 
-    # --- Lógica de Controle por Teclado ---
-    key = cv2.waitKey(1) & 0xFF
-
-    if key == 27:  # Tecla ESC para SAIR
+    # Controle por teclado
+    key = cv2.waitKey(5) & 0xFF
+    if key == 27:  # ESC
         break
-    
-    elif key == 32: # Tecla ESPAÇO para PAUSAR/RETOMAR
-        if current_label and img_count < CAPTURE_LIMIT: # Só funciona se uma captura estiver em andamento
-            capturing = not capturing
-
-    elif 65 <= key <= 90 or 97 <= key <= 122 or key == ord('0'): # Teclas A-Z ou 0
+    elif key == 32:  # ESPAÇO
+        if current_label:
+            is_capturing = not is_capturing
+    elif 65 <= key <= 90 or 97 <= key <= 122 or key == ord('0'):
         if key == ord('0'):
-            new_label = "nenhum"
+            label_name = "nenhum"
         else:
-            new_label = chr(key).upper()
-
-        # Inicia uma nova sessão de captura
-        current_label = new_label
-        save_dir = os.path.join(DATA_DIR, current_label.upper())
-        os.makedirs(save_dir, exist_ok=True)
-        # Conta quantas imagens já existem para continuar de onde parou
-        img_count = len(os.listdir(save_dir))
+            label_name = chr(key).upper()
         
-        if img_count < CAPTURE_LIMIT:
-            capturing = True # Inicia a captura automaticamente
-            print(f"\n[INFO] Iniciando/Retomando captura para a classe '{current_label.upper()}'. Imagens existentes: {img_count}")
+        current_label = label_name
+        csv_path = os.path.join(DATA_DIR, f"{current_label}.csv")
+        
+        try:
+            with open(csv_path, 'r') as f:
+                capture_count = sum(1 for row in f)
+        except FileNotFoundError:
+            capture_count = 0
+
+        if capture_count < CAPTURE_LIMIT:
+            is_capturing = True
+            print(f"\n[INFO] Iniciando captura para '{current_label}'. Capturas existentes: {capture_count}")
         else:
-            capturing = False
-            print(f"\n[AVISO] A classe '{current_label.upper()}' já atingiu o limite de {CAPTURE_LIMIT} imagens.")
+            is_capturing = False # Garante que não comece a capturar se o limite já foi atingido
+            print(f"\n[AVISO] Classe '{current_label}' já atingiu o limite de {CAPTURE_LIMIT}.")
 
 # --- Finalização ---
 print("[INFO] Encerrando aplicação...")
+hands.close()
 cap.release()
 cv2.destroyAllWindows()
