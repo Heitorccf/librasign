@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Ferramenta para Captura de Dados Geométricos (Landmarks) - Versão Estável
+Sistema de Aquisição de Pontos de Referência Geométricos para Reconhecimento Gestual
 
-Este módulo foca na extração robusta de coordenadas 3D da mão,
-salvando-as em um formato CSV. A estrutura foi simplificada para
-garantir máxima estabilidade e exibir feedback visual contínuo.
+Este módulo implementa a captura sistemática de coordenadas tridimensionais
+dos pontos anatômicos da mão, persistindo os dados coletados em formato CSV
+para posterior processamento. A arquitetura prioriza a estabilidade operacional
+e fornece retroalimentação visual em tempo real durante o processo de aquisição.
 """
 import cv2
 import mediapipe as mp
@@ -12,11 +13,11 @@ import os
 import numpy as np
 import csv
 
-# --- Configurações ---
+# Definindo os parâmetros do sistema de armazenamento
 DATA_DIR = "data/landmarks"
-CAPTURE_LIMIT = 1000  # Limite de capturas por classe
+CAPTURE_LIMIT = 1000  # Estabelecendo o limite máximo de amostras por categoria gestual
 
-# --- Inicialização de Componentes ---
+# Inicializando os módulos de processamento do MediaPipe
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 hands = mp_hands.Hands(static_image_mode=False,
@@ -26,7 +27,7 @@ hands = mp_hands.Hands(static_image_mode=False,
 
 cap = cv2.VideoCapture(0)
 
-# --- Variáveis de Controle de Estado ---
+# Estabelecendo as variáveis de controle do fluxo de captura
 is_capturing = False
 current_label = None
 capture_count = 0
@@ -52,13 +53,13 @@ while cap.isOpened():
     results = hands.process(image_rgb)
     frame.flags.writeable = True
 
-    # Lógica de captura e salvamento
+    # Processando a detecção e armazenamento dos pontos de referência
     if results.multi_hand_landmarks:
         for hand_landmarks in results.multi_hand_landmarks:
-            # --- MUDANÇA: O desenho agora é feito sempre que uma mão é detectada ---
+            # Renderizando a visualização dos pontos detectados e suas conexões anatômicas
             mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
             
-            # A lógica de SALVAR os dados continua dentro da condição de captura
+            # Executando o procedimento de persistência quando o modo de captura está ativo
             if is_capturing and current_label and capture_count < CAPTURE_LIMIT:
                 try:
                     landmarks = hand_landmarks.landmark
@@ -75,7 +76,7 @@ while cap.isOpened():
                 except Exception as e:
                     print(f"[ERRO] Falha ao salvar os dados: {e}")
 
-    # UI para exibir o status
+    # Construindo a interface de feedback visual para o operador
     status_text = "Ocioso. Escolha uma letra para iniciar."
     if current_label:
         if capture_count >= CAPTURE_LIMIT:
@@ -89,14 +90,15 @@ while cap.isOpened():
     cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
     cv2.imshow("Captura de Landmarks - LIBRAS", frame)
 
-    # Controle por teclado
+    # Implementando o sistema de controle através de comandos do teclado
     key = cv2.waitKey(5) & 0xFF
-    if key == 27:  # ESC
+    if key == 27:  # Detectando o pressionamento da tecla ESC para encerramento
         break
-    elif key == 32:  # ESPAÇO
+    elif key == 32:  # Identificando a barra de espaço para alternância de estado
         if current_label:
             is_capturing = not is_capturing
     elif 65 <= key <= 90 or 97 <= key <= 122 or key == ord('0'):
+        # Processando a seleção de uma nova classe gestual
         if key == ord('0'):
             label_name = "nenhum"
         else:
@@ -105,6 +107,7 @@ while cap.isOpened():
         current_label = label_name
         csv_path = os.path.join(DATA_DIR, f"{current_label}.csv")
         
+        # Verificando a quantidade de amostras já coletadas para esta classe
         try:
             with open(csv_path, 'r') as f:
                 capture_count = sum(1 for row in f)
@@ -115,10 +118,10 @@ while cap.isOpened():
             is_capturing = True
             print(f"\n[INFO] Iniciando captura para '{current_label}'. Capturas existentes: {capture_count}")
         else:
-            is_capturing = False # Garante que não comece a capturar se o limite já foi atingido
+            is_capturing = False  # Bloqueando a captura automática quando o limite foi atingido
             print(f"\n[AVISO] Classe '{current_label}' já atingiu o limite de {CAPTURE_LIMIT}.")
 
-# --- Finalização ---
+# Executando os procedimentos de finalização do sistema
 print("[INFO] Encerrando aplicação...")
 hands.close()
 cap.release()
