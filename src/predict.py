@@ -12,16 +12,21 @@ import numpy as np
 import pickle
 import os
 
-# Carregando o modelo treinado e o normalizador de características
-print("[INFO] Carregando modelo MLP e normalizador...")
+# Carregando o modelo treinado, o normalizador e o mapeamento de classes
+print("[INFO] Carregando modelo MLP, normalizador e classes...")
 with open("models/librasign_mlp.pkl", 'rb') as f:
     model = pickle.load(f)
 with open("models/scaler.pkl", 'rb') as f:
     scaler = pickle.load(f)
 
+# --- MUDANÇA: Carregando o array de nomes das classes ---
+# Este arquivo contém o "dicionário" para traduzir os números de volta para letras.
+class_names = np.load("models/classes.npy")
+
+
 # Configurando os componentes de detecção e visualização do MediaPipe
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
+hands = mp.solutions.hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
 mp_draw = mp.solutions.drawing_utils
 
 cap = cv2.VideoCapture(0)
@@ -43,14 +48,15 @@ while True:
         for hand_landmarks in result.multi_hand_landmarks:
             mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
             
-            # Extraindo as coordenadas tridimensionais e preparando para inferência
             landmarks = hand_landmarks.landmark
             coords = np.array([[lm.x, lm.y, lm.z] for lm in landmarks]).flatten().reshape(1, -1)
             scaled_coords = scaler.transform(coords)
             
-            # Executando a classificação através do modelo treinado
-            prediction = model.predict(scaled_coords)
-            prediction_label = prediction[0]
+            # Executa a classificação, que retorna um número (índice)
+            prediction_index = model.predict(scaled_coords)
+            
+            # --- MUDANÇA: "Traduzindo" o índice para a letra correspondente ---
+            prediction_label = class_names[prediction_index[0]]
     
     # Construindo a interface visual de feedback para o usuário
     display_text = f"Letra: {prediction_label}" if prediction_label else "Aguardando gesto..."

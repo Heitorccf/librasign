@@ -1,48 +1,50 @@
-# Ambientes virtuais
+# Ignorando ambientes virtuais do Python
 .venv/
 venv/
 ENV/
 env/
 
-# Python bytecode/compilados
+# Excluindo bytecode e arquivos compilados do Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# Distribuição/pacotes Python
+# Removendo artefatos de distribuição e empacotamento
 build/
 dist/
 *.egg-info/
 *.egg
 
-# Logs do pip
+# Descartando registros de instalação do pip
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Configurações de IDEs (exemplos)
-# .vscode/*
+# Gerenciando configurações específicas de ambientes de desenvolvimento
+# .vscode/
 # !.vscode/settings.json
 # !.vscode/tasks.json
 # !.vscode/launch.json
 # !.vscode/extensions.json
 # .idea/
 
-# Arquivos de SO
+# Filtrando arquivos específicos de sistemas operacionais
 .DS_Store
 Thumbs.db
 
-# Logs da aplicação
+# Omitindo registros de execução da aplicação
 *.log
 logs/
 
-# Dados capturados (ignorar conteúdo de data/raw/)
+# Excluindo dados brutos capturados durante o treinamento
 data/raw/
 data/landmarks/
 
-# Modelos treinados (ignorar conteúdo de models/)
+# Ignorando modelos treinados e seus artefatos
 models/
 
-# Arquivos temporários/swap de editores
+notebooks/
+
+# Descartando arquivos temporários gerados por editores de texto
 *.swp
 *.swo
