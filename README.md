@@ -1,192 +1,109 @@
-# LibraSign - Sistema de Reconhecimento de Libras
+Sistema de Tradução em Tempo Real do Alfabeto da Libras (Librasign)
 
-## 📋 Sobre o Projeto
+!(https://img.shields.io/badge/status-Concluído-success.svg)
 
-O LibraSign é um sistema de reconhecimento de gestos da Língua Brasileira de Sinais (Libras) desenvolvido com tecnologias de visão computacional e aprendizado profundo. O projeto utiliza redes neurais convolucionais para identificar e classificar gestos do alfabeto em Libras capturados através de uma webcam em tempo real.
+Português | 
 
-Este sistema foi desenvolvido com o objetivo de contribuir para a acessibilidade e inclusão digital, oferecendo uma ferramenta que pode auxiliar no aprendizado e na comunicação através da Libras. A aplicação é capaz de reconhecer os gestos das letras do alfabeto, processando as imagens capturadas e fornecendo feedback visual instantâneo ao usuário.
+Contato
 
-## ✨ Funcionalidades Principais
+Heitor Câmara Costa Fernandes
 
-O LibraSign oferece um conjunto completo de funcionalidades para captura, treinamento e reconhecimento de gestos:
+🇧🇷 Português
 
-**Captura de Dados**: O sistema permite a coleta sistemática de imagens de gestos através da webcam, organizando automaticamente o conjunto de dados por categoria alfabética. Durante a captura, o usuário pode visualizar em tempo real a detecção da mão e o processo de salvamento das imagens.
+Metodologia e Funcionamento ⚙️
 
-**Pré-processamento Inteligente**: Todas as imagens capturadas passam por um pipeline de processamento que inclui conversão para escala de cinza, redimensionamento padronizado e normalização dos valores de pixel, garantindo consistência e otimização para o treinamento do modelo.
+O sistema opera através de um pipeline de processamento que se divide em três etapas fundamentais: coleta de dados, treinamento do modelo e tradução em tempo real.
 
-**Treinamento de Modelo**: O sistema implementa uma arquitetura de rede neural convolucional otimizada para reconhecimento de padrões visuais, com camadas de convolução, pooling e regularização através de dropout para prevenir sobreajuste.
+1. Coleta e Representação de Dados Geométricos 🖐️
 
-**Reconhecimento em Tempo Real**: A aplicação principal oferece predição instantânea dos gestos capturados pela webcam, exibindo o resultado diretamente na interface visual com indicadores claros do estado do sistema.
+Em vez de capturar e armazenar milhares de imagens, o sistema utiliza uma webcam para detectar a mão do usuário em tempo real. A biblioteca MediaPipe é empregada para identificar e extrair as coordenadas 3D de 21 pontos de referência (landmarks) que compõem a estrutura da mão.  Cada gesto é, portanto, convertido em um vetor numérico de 63 dimensões (21 pontos x 3 coordenadas), representando sua geometria esquelética. Esses vetores são salvos em arquivos 
 
-## 🛠️ Tecnologias Utilizadas
+.csv, criando um dataset leve, preciso e imune a ruídos visuais como variações de iluminação ou complexidade do fundo.
 
-O projeto foi construído utilizando um conjunto robusto de bibliotecas e frameworks modernos:
+2. Treinamento do Modelo de Classificação 🧠
 
-- **Python 3.8+**: Linguagem principal do projeto
-- **OpenCV**: Processamento de imagens e interface com webcam
-- **MediaPipe**: Detecção e rastreamento de mãos em tempo real
-- **TensorFlow/Keras**: Construção e treinamento da rede neural convolucional
-- **NumPy**: Manipulação eficiente de arrays multidimensionais
-- **Scikit-learn**: Ferramentas de pré-processamento e divisão de dados
+Com os dados geométricos coletados, um modelo de machine learning é treinado para associar cada vetor de coordenadas a uma letra do alfabeto. Devido à natureza tabular e de baixa dimensionalidade dos dados, optou-se por um modelo Perceptron de Múltiplas Camadas (MLP), uma arquitetura de rede neural eficiente para este tipo de tarefa. Antes do treinamento, os dados passam por um processo de normalização (standardization) para garantir que todas as características contribuam de forma equitativa para o aprendizado. O resultado é um modelo classificador altamente otimizado, treinado em segundos, que aprende a distinguir os gestos unicamente a partir de sua forma e estrutura.
 
-## 📁 Estrutura do Projeto
+3. Tradução em Tempo Real 🚀
 
-```
-librasign/
-│
-├── capture.py           # Sistema de captura de imagens via webcam
-├── normalizing.py       # Pipeline de pré-processamento de dados
-├── train.py            # Treinamento do modelo de rede neural
-├── predict.py          # Aplicação de reconhecimento em tempo real
-│
-├── data/
-│   └── raw/            # Diretório para armazenamento das imagens capturadas
-│       ├── A/          # Imagens da letra A
-│       ├── B/          # Imagens da letra B
-│       └── ...         # Demais letras do alfabeto
-│
-├── models/
-│   └── best_model.keras  # Modelo treinado salvo
-│
-├── LICENSE             # Licença GPL v3
-└── README.md          # Este arquivo
-```
+A aplicação final integra os componentes anteriores para fornecer uma tradução instantânea. O sistema captura o vídeo da webcam, extrai os landmarks da mão em cada quadro, aplica a mesma normalização utilizada no treinamento e alimenta o vetor de coordenadas ao modelo MLP treinado. O modelo, então, prediz a qual letra o gesto corresponde, e o resultado é exibido na tela para o usuário. Este ciclo de detecção, processamento e classificação ocorre de forma contínua e com baixa latência, criando uma ferramenta de comunicação interativa e funcional.
 
-## 📋 Pré-requisitos
+Publicação Acadêmica 🎓
 
-Antes de iniciar a instalação do LibraSign, certifique-se de que seu sistema atende aos seguintes requisitos:
+O documento completo do Trabalho de Conclusão de Curso, contendo a fundamentação teórica, a metodologia detalhada e a análise dos resultados, está disponível para visualização e download em repositórios acadêmicos permanentes.
 
-- Python 3.8 ou superior instalado
-- Webcam funcional conectada ao computador
-- Sistema operacional: Windows, Linux ou macOS
-- Pelo menos 4GB de RAM disponível
-- Espaço em disco: aproximadamente 500MB para o projeto e dados
+    Zenodo (DOI): ``
 
-## 🚀 Instalação
+    ResearchGate: ``
 
-Siga este passo a passo detalhado para configurar o LibraSign em seu ambiente:
+Tecnologias Utilizadas 🛠️
 
-### 1. Clone o repositório
+    Linguagem: Python 3.9+
 
-```bash
-git clone https://github.com/seu-usuario/librasign.git
-cd librasign
-```
+    Visão Computacional: OpenCV, MediaPipe
 
-### 2. Crie um ambiente virtual
+    Machine Learning: Scikit-learn (MLPClassifier, StandardScaler)
 
-É altamente recomendado utilizar um ambiente virtual para evitar conflitos entre dependências:
+    Manipulação de Dados: NumPy, Pandas
 
-```bash
-# No Windows
-python -m venv venv
-venv\Scripts\activate
+Licença ©️
 
-# No Linux/macOS
-python3 -m venv venv
-source venv/bin/activate
-```
+Este projeto está licenciado sob a GNU General Public License v3.0. Veja o arquivo LICENSE para mais detalhes.
 
-### 3. Instale as dependências
+Agradecimentos 🙏
 
-```bash
-pip install opencv-python mediapipe tensorflow numpy scikit-learn
-```
+    Ao Professor Orientador Cecílio Merlotti Rodas, pelo suporte e direcionamento acadêmico.
 
-### 4. Crie a estrutura de diretórios necessária
+    Ao Instituto Federal de Educação, Ciência e Tecnologia de São Paulo (IFSP), pela estrutura e fomento à pesquisa.
 
-```bash
-mkdir -p data/raw models
-```
+Este projeto foi desenvolvido com o objetivo de promover a inclusão e a acessibilidade através da tecnologia. Que ele possa contribuir para quebrar barreiras de comunicação e aproximar pessoas.
 
-## 💻 Como Usar
+🇬🇧 🇺🇸 English
 
-O LibraSign funciona através de um fluxo de trabalho sequencial que você deve seguir para obter os melhores resultados:
+Methodology and How It Works
 
-### Etapa 1: Captura de Dados
+The system operates through a processing pipeline divided into three fundamental stages: data collection, model training, and real-time translation.
 
-Execute o script de captura para coletar imagens de treinamento:
+1. Geometric Data Collection and Representation
 
-```bash
-python capture.py
-```
+Instead of capturing and storing thousands of images, the system uses a webcam to detect the user's hand in real-time. The MediaPipe library is employed to identify and extract the 3D coordinates of 21 reference points (landmarks) that make up the hand's structure.  Each gesture is thus converted into a 63-dimensional numerical vector (21 points x 3 coordinates), representing its skeletal geometry. These vectors are saved into 
 
-Durante a execução, o sistema mostrará uma janela com o vídeo da webcam. Para capturar imagens de uma letra específica, pressione a tecla correspondente (A-Z) no teclado. O sistema começará a salvar automaticamente as imagens detectadas da sua mão fazendo o gesto. Recomenda-se capturar pelo menos 100 imagens por letra, variando a posição, iluminação e ângulo da mão para criar um conjunto de dados robusto.
+.csv files, creating a lightweight, precise dataset that is immune to visual noise such as lighting variations or background complexity.
 
-### Etapa 2: Processamento dos Dados
+2. Classification Model Training
 
-O pré-processamento é executado automaticamente quando você treina o modelo, mas você pode verificar se os dados estão corretos executando:
+With the geometric data collected, a machine learning model is trained to associate each coordinate vector with a letter of the alphabet. Due to the tabular and low-dimensional nature of the data, a Multi-Layer Perceptron (MLP) model was chosen, an efficient neural network architecture for this type of task. Before training, the data undergoes a standardization process to ensure that all features contribute equally to the learning process. The result is a highly optimized classifier model, trained in seconds, that learns to distinguish gestures solely based on their shape and structure.
 
-```bash
-python normalizing.py
-```
+3. Real-Time Translation
 
-Este script carregará todas as imagens capturadas, aplicará as transformações necessárias e exibirá informações sobre o conjunto de dados, incluindo o número total de imagens e as classes detectadas.
+The final application integrates the previous components to provide instantaneous translation. The system captures video from the webcam, extracts the hand landmarks in each frame, applies the same normalization used during training, and feeds the coordinate vector to the trained MLP model. The model then predicts which letter the gesture corresponds to, and the result is displayed on the screen for the user. This cycle of detection, processing, and classification occurs continuously and with low latency, creating an interactive and functional communication tool.
 
-### Etapa 3: Treinamento do Modelo
+Academic Publication
 
-Inicie o processo de treinamento da rede neural:
+The full Final Year Project document, containing the theoretical foundation, detailed methodology, and analysis of the results, is available for viewing and download in permanent academic repositories.
 
-```bash
-python train.py
-```
+    Zenodo (DOI): ``
 
-O treinamento pode levar alguns minutos, dependendo da quantidade de dados e do poder de processamento do seu computador. Durante o processo, você verá informações sobre o progresso, incluindo a acurácia do modelo em cada época. O melhor modelo será salvo automaticamente no diretório `models/`.
+    ResearchGate: ``
 
-### Etapa 4: Reconhecimento em Tempo Real
+Technology Stack
 
-Após o treinamento bem-sucedido, execute a aplicação principal:
+    Linguagem: Python 3.9+
 
-```bash
-python predict.py
-```
+    Visão Computacional: OpenCV, MediaPipe
 
-Uma janela será aberta mostrando o vídeo da webcam com overlay de detecção. Faça gestos de letras em Libras em frente à câmera e o sistema exibirá a letra reconhecida em tempo real no canto superior direito da tela.
+    Machine Learning: Scikit-learn (MLPClassifier, StandardScaler)
 
-## 🧠 Como Funciona
+    Manipulação de Dados: NumPy, Pandas
 
-O LibraSign implementa um pipeline completo de visão computacional e aprendizado de máquina que pode ser compreendido em quatro componentes principais:
+License
 
-**Detecção de Mãos**: O sistema utiliza o MediaPipe, uma biblioteca desenvolvida pelo Google, para detectar e rastrear pontos de referência anatômicos da mão em tempo real. O MediaPipe identifica 21 pontos-chave na mão, permitindo o cálculo preciso da região de interesse (ROI) que contém o gesto.
+This project is licensed under the GNU General Public License v3.0. See the LICENSE file for more details.
 
-**Pré-processamento de Imagens**: Cada imagem capturada passa por uma série de transformações essenciais. Primeiro, a região da mão é extraída e convertida para escala de cinza, removendo informações de cor que são irrelevantes para a forma do gesto. Em seguida, a imagem é redimensionada para 224x224 pixels e os valores dos pixels são normalizados para o intervalo [0, 1], otimizando o processo de aprendizagem da rede neural.
+Acknowledgments
 
-**Arquitetura da Rede Neural**: O modelo utiliza uma arquitetura convolucional com duas camadas de convolução (32 e 64 filtros), intercaladas com camadas de max pooling para redução dimensional. Após o achatamento dos mapas de características, uma camada densa com 128 neurônios processa as informações, seguida de dropout (50%) para regularização. A camada de saída utiliza ativação softmax para gerar probabilidades para cada classe.
+    To my advisor, Professor Cecílio Merlotti Rodas, for the academic support and guidance.
 
-**Inferência e Predição**: Durante o reconhecimento em tempo real, cada frame capturado pela webcam passa pelo mesmo pipeline de pré-processamento usado no treinamento. O modelo processa a imagem e retorna um vetor de probabilidades, onde cada posição corresponde a uma letra do alfabeto. A letra com maior probabilidade é selecionada como a predição final.
+    To the Federal Institute of Education, Science and Technology of São Paulo (IFSP), for the infrastructure and encouragement of research.
 
-## 🤝 Contribuindo
-
-Contribuições são extremamente bem-vindas e valorizadas! O LibraSign é um projeto de código aberto e sua evolução depende da colaboração da comunidade. Se você deseja contribuir, siga estas diretrizes:
-
-1. Faça um fork do projeto através do GitHub
-2. Crie uma branch para sua funcionalidade (`git checkout -b feature/NovaFuncionalidade`)
-3. Commit suas mudanças com mensagens descritivas (`git commit -m 'Adicionando nova funcionalidade X'`)
-4. Push para a branch (`git push origin feature/NovaFuncionalidade`)
-5. Abra um Pull Request detalhando as mudanças propostas
-
-Algumas áreas onde contribuições seriam especialmente valiosas:
-- Implementação de reconhecimento de palavras completas
-- Otimização do modelo para melhor acurácia
-- Interface gráfica mais elaborada
-- Suporte para reconhecimento de números e expressões
-- Documentação adicional e tutoriais
-
-## 📄 Licença
-
-Este projeto está licenciado sob a GNU General Public License v3.0 (GPL-3.0). Isso significa que você tem a liberdade de usar, modificar e distribuir este software, desde que mantenha a mesma licença e os créditos originais. Para mais detalhes, consulte o arquivo [LICENSE](LICENSE) no repositório.
-
-A escolha da GPL v3 reflete nosso compromisso com o software livre e a acessibilidade tecnológica, garantindo que melhorias e derivações deste projeto permaneçam abertas e acessíveis à comunidade.
-
-## ✉️ Autor e Contato
-
-**Heitor Câmara Costa Fernandes**
-
-- Email: Heitorccfernandes550@gmail.com
-- Ano de desenvolvimento: 2025
-
-Para dúvidas, sugestões ou reportar problemas, sinta-se à vontade para abrir uma issue no repositório ou entrar em contato diretamente através do email fornecido.
-
----
-
-*Este projeto foi desenvolvido com o objetivo de promover a inclusão e acessibilidade através da tecnologia. Que ele possa contribuir para quebrar barreiras de comunicação e aproximar pessoas.*
+This project was developed with the goal of promoting inclusion and accessibility through technology. May it contribute to breaking down communication barriers and bringing people closer together.
