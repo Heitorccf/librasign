@@ -18,46 +18,10 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import accuracy_score, confusion_matrix
 import pickle
 
-# --- 1. FUNÇÃO DE NORMALIZAÇÃO DE LANDMARKS ---
-def normalize_landmarks(data):
-    """
-    Normaliza um conjunto de landmarks para ser invariante à posição e escala.
-
-    Args:
-        data (np.array): Array de formato (n_samples, 63) com as coordenadas.
-
-    Returns:
-        np.array: Array de formato (n_samples, 63) com os dados normalizados.
-    """
-    normalized_data = []
-    for sample in data:
-        # Remodelar a amostra para (21, 3) para facilitar os cálculos
-        landmarks = sample.reshape((21, 3))
-
-        # Passo 1: Invariância à Posição (Translação)
-        # Centralizar todos os pontos em relação ao pulso (landmark 0)
-        base_point = landmarks[0].copy()
-        relative_landmarks = landmarks - base_point
-
-        # Passo 2: Invariância à Escala
-        # Calcular a distância entre o pulso e a base do dedo médio (landmark 9)
-        # Se essa distância for zero, use um valor pequeno para evitar divisão por zero
-        scale_dist = np.linalg.norm(relative_landmarks[9])
-        if scale_dist < 1e-6:
-            scale_dist = 1.0 # Evita divisão por zero em casos anômalos
-
-        # Normalizar pela distância
-        scaled_landmarks = relative_landmarks / scale_dist
-
-        # Aplainar de volta para o formato (63,) e adicionar à lista
-        normalized_data.append(scaled_landmarks.flatten())
-
-    return np.array(normalized_data)
-
-# --- 2. CARREGAMENTO E PRÉ-PROCESSAMENTO DOS DADOS ---
+# Iniciando o carregamento do conjunto de dados pré-processados
 print("[INFO] Carregando dataset de landmarks...")
 DATA_DIR = "data/landmarks"
-X_raw, y_raw = [], []
+X, y = [], []
 
 # Iterando sobre os arquivos CSV para construir a matriz de características
 for file in os.listdir(DATA_DIR):
@@ -67,92 +31,55 @@ for file in os.listdir(DATA_DIR):
         X_raw.append(df.values)
         y_raw.extend([label] * len(df))
 
-X = np.vstack(X_raw)
+X = np.vstack(X)
 
-# Aplicando a codificação numérica aos rótulos
+# Aplicando a codificação numérica aos rótulos textuais para compatibilidade com o algoritmo
+# A transformação de categorias em valores numéricos otimiza o processamento computacional
 le = LabelEncoder()
-y = le.fit_transform(y_raw)
-np.save('models/classes.npy', le.classes_) # Salva as classes para uso na predição
+y_encoded = le.fit_transform(y)
 
-# --- 3. APLICANDO A NORMALIZAÇÃO DE LANDMARKS ---
-print("[INFO] Normalizando landmarks para invariância de posição e escala...")
-X_normalized = normalize_landmarks(X)
+# Persistindo o mapeamento de classes para reconstrução posterior das predições
+np.save('models/classes.npy', le.classes_)
 
-# --- 4. TREINAMENTO COM VALIDAÇÃO CRUZADA E ANÁLISE ---
-print("[INFO] Iniciando treinamento com validação cruzada (K=5)...")
+# Estruturando a divisão estratificada entre conjuntos de treinamento e validação
+X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
 
-# Configuração da Validação Cruzada Estratificada
-n_splits = 5
-skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
 
-# Listas para armazenar métricas de cada fold
-accuracies = []
-all_y_true = []
-all_y_pred = []
+# Implementando o processo de treinamento incremental para monitoramento da convergência
+print("[INFO] Treinando o modelo MLPClassifier iterativamente...")
+model = MLPClassifier(hidden_layer_sizes=(128, 64), max_iter=1, warm_start=True, random_state=42, verbose=False)
 
-# Loop de treinamento
-for i, (train_index, test_index) in enumerate(skf.split(X_normalized, y)):
-    print(f"--- FOLD {i + 1}/{n_splits} ---")
-    X_train, X_test = X_normalized[train_index], X_normalized[test_index]
-    y_train, y_test = y[train_index], y[test_index]
+loss_history = []
+n_epochs = 100  # Definindo o número total de iterações de treinamento
 
-    # Normalização dos dados (StandardScaler) - ajustado a cada fold de treino
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    # Definição do modelo com regularização L2 (alpha)
-    model = MLPClassifier(
-        hidden_layer_sizes=(128, 64),
-        max_iter=300, # Aumentar para garantir convergência
-        random_state=42,
-        verbose=False,
-        alpha=0.001 # Parâmetro de regularização L2
-    )
-
-    # Treinamento
+for epoch in range(n_epochs):
     model.fit(X_train_scaled, y_train)
+    loss_history.append(model.loss_)
+    print(f"Época {epoch + 1}/{n_epochs} - Perda: {model.loss_:.4f}", end='\r')
 
-    # Avaliação
-    y_pred = model.predict(X_test_scaled)
-    accuracy = accuracy_score(y_test, y_pred)
-    accuracies.append(accuracy)
-    print(f"Acurácia do Fold {i + 1}: {accuracy * 100:.2f}%")
+print(f"\n[INFO] Treinamento finalizado após {model.n_iter_} iterações.")
 
-    # Guardar resultados para a matriz de confusão final
-    all_y_true.extend(y_test)
-    all_y_pred.extend(y_pred)
+# Executando a validação do modelo treinado
+print("[INFO] Avaliando o modelo...")
+y_pred = model.predict(X_test_scaled)
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Acurácia final do modelo nos dados de teste: {accuracy * 100:.2f}%")
 
-# --- 5. RESULTADOS FINAIS E SALVAMENTO DOS ARTEFATOS ---
-mean_accuracy = np.mean(accuracies)
-std_accuracy = np.std(accuracies)
-print("-" * 30)
-print(f"[RESULTADO] Acurácia Média: {mean_accuracy * 100:.2f}% (+/- {std_accuracy * 100:.2f}%)")
-
-# Geração da matriz de confusão
-conf_matrix = confusion_matrix(all_y_true, all_y_pred)
-np.save('models/confusion_matrix.npy', conf_matrix)
-print("[INFO] Matriz de confusão salva em 'models/confusion_matrix.npy'")
-
-# Treinando o modelo final com TODOS os dados para produção
-print("[INFO] Treinando o modelo final com todo o dataset...")
-final_scaler = StandardScaler().fit(X_normalized)
-X_final_scaled = final_scaler.transform(X_normalized)
-
-final_model = MLPClassifier(
-    hidden_layer_sizes=(128, 64),
-    max_iter=300,
-    random_state=42,
-    alpha=0.001
-)
-final_model.fit(X_final_scaled, y)
-
-# Salvando os artefatos finais
-print("[INFO] Salvando artefatos finais do modelo...")
+# Salvando os artefatos gerados durante o treinamento
+print("[INFO] Salvando artefatos do modelo...")
 os.makedirs("models", exist_ok=True)
-with open("models/librasign_mlp.pkl", 'wb') as f:
-    pickle.dump(final_model, f)
-with open("models/scaler.pkl", 'wb') as f:
-    pickle.dump(final_scaler, f)
 
-print("[INFO] Processo de treinamento aprimorado concluído com sucesso.")
+with open("models/librasign_mlp.pkl", 'wb') as f:
+    pickle.dump(model, f)
+
+with open("models/scaler.pkl", 'wb') as f:
+    pickle.dump(scaler, f)
+
+# Armazenando o histórico de evolução da função de perda e os dados de validação
+np.save('models/loss_history.npy', loss_history)
+np.save('models/test_data.npy', {'X_test': X_test_scaled, 'y_test': y_test})
+
+print("[INFO] Processo concluído com sucesso.")
