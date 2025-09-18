@@ -1,104 +1,112 @@
 # -*- coding: utf-8 -*-
 """
-Sistema de Carregamento e Pré-processamento de Dados Visuais (Legado).
+Sistema de Carregamento e Pré-processamento de Dados Visuais (Legado)
 
-Aviso: Este módulo representa uma abordagem de processamento baseada em imagens
+Aviso: Este módulo está representando uma abordagem de processamento baseada em imagens
 e não está sendo utilizado pela metodologia atual do projeto, que opera
-diretamente sobre coordenadas geométricas (landmarks).
+diretamente sobre coordenadas geométricas (landmarks)
 
 Este arquivo está sendo mantido para fins de documentação e para eventuais
-desenvolvedores que desejem explorar ou adaptar um pipeline de treinamento
-utilizando redes neurais convolucionais, que operam sobre dados de imagem.
+desenvolvedores que desejem explorar uma alternativa de pipeline utilizando
+redes neurais convolucionais, que operam sobre dados de imagem
 """
-
 import os
 import cv2
 import numpy as np
 
-# Estabelecendo os parâmetros operacionais do sistema.
+# ============================================================================
+# Bloco de Configuração
+# ============================================================================
 
-# Especificando o diretório fonte que estaria contendo as imagens brutas,
-# as quais deveriam estar organizadas em subdiretórios por classe.
+# Especificando o diretório fonte para as imagens brutas
+# A estrutura esperada seria uma pasta para cada classe, contendo as imagens
 DATA_DIR = "data/raw"
 
-# Definindo as dimensões padronizadas, visando o processamento uniforme das imagens.
+# Definindo uma dimensão padronizada para as imagens
+# O motivo desta padronização é garantir que a entrada da rede neural
+# tenha sempre um tamanho uniforme, um requisito para o processamento em lote
 IMG_SIZE = 224
+
+# ============================================================================
+# Bloco Funcional
+# ============================================================================
 
 def load_and_preprocess_images():
     """
-    Executa o carregamento e o pré-processamento de um conjunto de dados visual.
+    Executa o carregamento e o pré-processamento de um conjunto de dados visual
     
     Este procedimento estaria percorrendo sistematicamente a estrutura de diretórios,
-    onde cada subpasta corresponderia a uma categoria distinta do alfabeto. As imagens
-    estariam sendo processadas em escala monocromática, redimensionadas para dimensões
-    uniformes e normalizadas, visando a otimização do processo de treinamento.
+    processando as imagens em escala monocromática, redimensionando-as e normalizando
+    seus valores de pixel, visando a otimização de um eventual processo de treinamento
     
     Returns:
-        tuple: Uma estrutura contendo dois arrays NumPy organizados:
-               - data: Um tensor multidimensional contendo as imagens processadas.
-               - labels: Um vetor de identificadores categóricos correspondentes.
+        tuple: Uma estrutura contendo dois arrays NumPy:
+               - data: Um tensor multidimensional com as imagens processadas
+               - labels: Um vetor com os identificadores categóricos correspondentes
     """
     data = []
     labels = []
     
-    # Percorrendo a estrutura de diretórios categorizados por classe alfabética.
+    # Percorrendo a estrutura de diretórios para identificar as classes
     for label in os.listdir(DATA_DIR):
         label_path = os.path.join(DATA_DIR, label)
         
-        # Validando a natureza diretorial do caminho antes de iniciar o processamento.
+        # Validando se o item é um diretório, ignorando outros arquivos
         if not os.path.isdir(label_path):
             continue
         
-        # Processando individualmente cada arquivo de imagem da categoria atual.
+        # Processando individualmente cada arquivo de imagem da classe atual
         for img_name in os.listdir(label_path):
             img_path = os.path.join(label_path, img_name)
             
-            # Carregando a imagem diretamente em representação monocromática,
-            # buscando otimizar o consumo de memória e eliminar etapas
-            # de conversão cromática posteriores.
+            # Carregando a imagem diretamente em escala de cinza
+            # A decisão por esta abordagem visa otimizar o consumo de memória
+            # e reduzir a complexidade do modelo, focando apenas na forma
             img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
             
+            # Verificando se a imagem foi carregada corretamente
             if img is None:
                 print(f"[AVISO] Não foi possível ler a imagem: {img_path}")
                 continue
             
-            # Aplicando o redimensionamento para garantir uniformidade dimensional,
-            # um requisito fundamental para o processamento em lote por
-            # redes neurais convolucionais.
+            # Aplicando o redimensionamento para garantir uniformidade dimensional
             img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
             
-            # Normalizando a distribuição de intensidades luminosas, transformando
-            # os valores discretos do intervalo [0, 255] para valores contínuos em [0, 1],
-            # facilitando a convergência numérica durante o treinamento do modelo.
+            # Normalizando os valores de pixel para o intervalo [0, 1]
+            # Esta transformação para ponto flutuante ajuda a estabilizar
+            # e acelerar a convergência durante o treinamento do modelo
             img = img.astype(np.float32) / 255.0
             
-            # Acumulando a imagem processada e sua classificação correspondente nas listas.
+            # Acumulando a imagem processada e seu rótulo correspondente
             data.append(img)
             labels.append(label)
     
-    # Convertendo as estruturas de lista para arrays NumPy, proporcionando
-    # uma manipulação vetorizada mais eficiente e compatibilidade com frameworks de ML.
+    # Convertendo as listas para arrays NumPy
+    # O objetivo é obter uma estrutura de dados otimizada para
+    # manipulação numérica e compatível com frameworks de machine learning
     data = np.array(data)
     labels = np.array(labels)
     
-    # Expandindo a dimensionalidade do tensor de imagens para estar em conformidade
-    # com a expectativa de entrada das arquiteturas de redes convolucionais.
-    # Esta transformação está adicionando um eixo de canal, convertendo o formato
-    # de (N, altura, largura) para (N, altura, largura, canais), onde N representa
-    # o número de amostras.
+    # Expandindo a dimensionalidade do tensor de dados
+    # A razão para esta etapa é adequar o formato do array (N, H, W) para
+    # (N, H, W, C), o formato esperado por muitas arquiteturas de redes
+    # convolucionais, onde C é o número de canais (1 para escala de cinza)
     data = np.expand_dims(data, axis=-1)
     
     return data, labels
 
-# Implementando uma rotina de validação funcional.
+# ============================================================================
+# Bloco de Validação
+# ============================================================================
 
-# Este bloco estaria sendo executado para verificação diagnóstica quando o módulo
-# é invocado diretamente, permitindo uma validação rápida da integridade do pipeline.
+# Verificando se o script está sendo executado diretamente
+# Este bloco serve como uma rotina de teste rápido para validar
+# a funcionalidade do pipeline de carregamento e processamento
 if __name__ == "__main__":
     X, y = load_and_preprocess_images()
     print(f"Total de imagens carregadas: {len(X)}")
     print(f"Formato dos dados das imagens (com canal): {X.shape}")
     
-    # Utilizando uma operação de conjunto para estar identificando as categorias
-    # únicas presentes no conjunto de dados que foi processado.
+    # Utilizando uma operação de conjunto para identificar as classes únicas
+    # que foram encontradas e processadas no diretório de dados
     print(f"Classes (rótulos) encontradas: {sorted(list(set(y)))}")
