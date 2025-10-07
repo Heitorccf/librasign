@@ -1,6 +1,13 @@
-scikit-learn==1.6.1
-numpy==2.0.2
+# Versão do Python recomendada para este projeto: 3.11.13
+
+# Frameworks principais de Machine Learning e processamento de dados
+scikit-learn==1.7.2
+numpy==2.2.6
 pandas==2.3.2
+
+# Bibliotecas para processamento de imagem e visão computacional
 opencv-python==4.12.0.88
 mediapipe==0.10.14
-matplotlib==3.9.4
+
+# Ferramenta para download de datasets do Kaggle
+kagglehub==0.3.13
