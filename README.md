@@ -1,5 +1,3 @@
-Com certeza\! Corrigi os links no arquivo README.md conforme solicitado.
-
 # LibraSign
 
 ## English
