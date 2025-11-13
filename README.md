@@ -1,36 +1,28 @@
-Aqui está o texto formatado em Markdown para o seu `README.md`.
-
------
-
 # LibraSign
 
-## Índice
-
-## Índice
-
-* [Introdução](#introducao)
-* [Fundamentação Acadêmica](#fundamentacao-academica)
-* [Visão Geral do Sistema](#visao-geral-do-sistema)
-    * [Escopo e Limitações](#escopo-e-limitacoes)
+* [Introdução](#introdução)
+* [Fundamentação Acadêmica](#fundamentação-acadêmica)
+* [Visão Geral do Sistema](#visão-geral-do-sistema)
+    * [Escopo e Limitações](#escopo-e-limitações)
     * [Arquitetura do Sistema](#arquitetura-do-sistema)
     * [Fluxo de Processamento](#fluxo-de-processamento)
 * [Requisitos do Sistema](#requisitos-do-sistema)
     * [Requisitos de Software](#requisitos-de-software)
     * [Requisitos de Hardware](#requisitos-de-hardware)
-* [Guia de Instalação](#guia-de-instalacao)
-    * [Etapa 1: Preparação do Ambiente](#etapa-1-preparacao-do-ambiente)
-    * [Etapa 2: Clonagem do Repositório](#etapa-2-clonagem-do-repositorio)
-    * [Etapa 3: Configuração do Ambiente Virtual](#etapa-3-configuracao-do-ambiente-virtual)
-    * [Etapa 4: Instalação das Dependências](#etapa-4-instalacao-das-dependencias)
-* [Execução do Sistema](#execucao-do-sistema)
-    * [Modo de Uso Padrão](#modo-de-uso-padrao)
+* [Guia de Instalação](#guia-de-instalação)
+    * [Etapa 1: Preparação do Ambiente](#etapa-1-preparação-do-ambiente)
+    * [Etapa 2: Clonagem do Repositório](#etapa-2-clonagem-do-repositório)
+    * [Etapa 3: Configuração do Ambiente Virtual](#etapa-3-configuração-do-ambiente-virtual)
+    * [Etapa 4: Instalação das Dependências](#etapa-4-instalação-das-dependências)
+* [Execução do Sistema](#execução-do-sistema)
+    * [Modo de Uso Padrão](#modo-de-uso-padrão)
     * [Captura de Novo Dataset (Opcional)](#captura-de-novo-dataset-opcional)
     * [Retreinamento do Modelo](#retreinamento-do-modelo)
-* [Dataset Público](#dataset-publico)
-* [Solução de Problemas](#solucao-de-problemas)
+* [Dataset Público](#dataset-público)
+* [Solução de Problemas](#solução-de-problemas)
 * [Aplicabilidade e Extensibilidade](#aplicabilidade-e-extensibilidade)
-* [Considerações Finais](#consideracoes-finais)
-* [Referências e Documentação Complementar](#referencias-e-documentacao-complementar)
+* [Considerações Finais](#considerações-finais)
+* [Referências e Documentação Complementar](#referências-e-documentação-complementar)
 
 -----
 
