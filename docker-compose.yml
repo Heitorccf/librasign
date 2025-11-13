@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  librasign:
+    build: .
+    image: librasign:latest
+    container_name: librasign_app
+    
+    stdin_open: true
+    tty: true
+    
+    environment:
+      - DISPLAY=${DISPLAY}
+      - KAGGLE_CONFIG_DIR=/root/.kaggle
+      
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./models:/app/models
+      - ~/.kaggle:/root/.kaggle:ro
+      
+    devices:
+      - /dev/video0:/dev/video0
